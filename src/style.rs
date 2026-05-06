@@ -4,7 +4,7 @@ use crate::dom::Node;
 use crate::css::parser::Stylesheet;
 use crate::css::selector::{matches, Selector};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct StyledNode {
     pub node: Node,
     pub specified_values: HashMap<String, String>,

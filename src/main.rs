@@ -4,6 +4,7 @@ use mini_browser::html::parser::parse_html;
 use mini_browser::css::parser::{parse_css, Stylesheet};
 use mini_browser::style::{style_tree, print_style_tree};
 use mini_browser::dom::Node;
+use mini_browser::layout::{build_layout_tree, layout, print_layout_box, Dimensions, Rect};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -28,6 +29,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Print styled tree
     println!("\nStyled Tree:");
     print_style_tree(&styled, 0);
+
+    // Build layout tree
+    let mut layout_root = build_layout_tree(&styled);
+
+    // Layout with fixed viewport width
+    let viewport = Dimensions {
+        content: Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 },
+        ..Dimensions::default()
+    };
+    layout(&mut layout_root, viewport);
+
+    // Print layout tree
+    println!("\nLayout Tree:");
+    print_layout_box(&layout_root, 0);
 
     Ok(())
 }
