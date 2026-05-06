@@ -5,15 +5,48 @@ use mini_browser::css::parser::{parse_css, Stylesheet};
 use mini_browser::style::{style_tree, print_style_tree};
 use mini_browser::dom::Node;
 use mini_browser::layout::{build_layout_tree, layout, print_layout_box, Dimensions, Rect};
+use mini_browser::paint::{build_display_list, render_to_terminal, render_to_ppm};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 2 {
-        eprintln!("Usage: mini-browser <url>");
-        std::process::exit(1);
+
+    let mut render_mode = false;
+    let mut ppm_path = None;
+    let mut url = None;
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--render" => render_mode = true,
+            "--ppm" => {
+                i += 1;
+                if i < args.len() {
+                    ppm_path = Some(args[i].clone());
+                } else {
+                    eprintln!("Usage: mini-browser <url> [--render] [--ppm <file>]");
+                    std::process::exit(1);
+                }
+            }
+            _ => {
+                if url.is_none() {
+                    url = Some(args[i].clone());
+                } else {
+                    eprintln!("Usage: mini-browser <url> [--render] [--ppm <file>]");
+                    std::process::exit(1);
+                }
+            }
+        }
+        i += 1;
     }
 
-    let url = Url::parse(&args[1])?;
+    let url = match url {
+        Some(u) => Url::parse(&u)?,
+        None => {
+            eprintln!("Usage: mini-browser <url> [--render] [--ppm <file>]");
+            std::process::exit(1);
+        }
+    };
+
     println!("Fetching {}://{}{}...", url.scheme, url.host, url.path);
 
     let body = fetch(&url)?;
@@ -40,9 +73,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     layout(&mut layout_root, viewport);
 
-    // Print layout tree
-    println!("\nLayout Tree:");
-    print_layout_box(&layout_root, 0);
+    if render_mode {
+        let display_list = build_display_list(&layout_root);
+        let output = render_to_terminal(&display_list, 80, 24);
+        println!("\nTerminal Render:");
+        println!("{}", output);
+    } else if let Some(path) = ppm_path {
+        let display_list = build_display_list(&layout_root);
+        let ppm = render_to_ppm(&display_list, 800, 600);
+        std::fs::write(&path, ppm)?;
+        println!("\nExported PPM to {}", path);
+    } else {
+        // Default: print layout tree
+        println!("\nLayout Tree:");
+        print_layout_box(&layout_root, 0);
+    }
 
     Ok(())
 }
