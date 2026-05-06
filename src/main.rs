@@ -1,6 +1,9 @@
 use mini_browser::network::url::Url;
 use mini_browser::network::fetch;
 use mini_browser::html::parser::parse_html;
+use mini_browser::css::parser::{parse_css, Stylesheet};
+use mini_browser::style::{style_tree, print_style_tree};
+use mini_browser::dom::Node;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -14,7 +17,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let body = fetch(&url)?;
     let dom = parse_html(&body);
-    println!("{}", dom);
+
+    // Extract inline stylesheets from <style> tags
+    let mut stylesheet = Stylesheet { rules: Vec::new() };
+    collect_styles(&dom, &mut stylesheet);
+
+    // Build styled tree
+    let styled = style_tree(&dom, &stylesheet);
+
+    // Print styled tree
+    println!("\nStyled Tree:");
+    print_style_tree(&styled, 0);
 
     Ok(())
+}
+
+fn collect_styles(node: &Node, stylesheet: &mut Stylesheet) {
+    if let Node::Element(element) = node {
+        if element.tag == "style" {
+            let mut css_text = String::new();
+            for child in &element.children {
+                if let Node::Text(text) = child {
+                    css_text.push_str(text);
+                }
+            }
+            let parsed = parse_css(&css_text);
+            stylesheet.rules.extend(parsed.rules);
+        }
+        for child in &element.children {
+            collect_styles(child, stylesheet);
+        }
+    }
 }

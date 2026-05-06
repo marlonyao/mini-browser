@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::fmt;
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Element(Element),
     Text(String),
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Element {
     pub tag: String,
     pub attrs: HashMap<String, String>,
