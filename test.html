@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mini Browser Test Page</title>
+<style>
+/* === 基础样式 === */
+body {
+    background-color: #f5f5f5;
+    color: #333333;
+    margin: 20px;
+    padding: 10px;
+    font-size: 16px;
+}
+
+/* === 标题区域 === */
+.header {
+    background-color: #2c3e50;
+    color: #ffffff;
+    padding: 20px;
+    margin: 0px 0px 20px 0px;
+    border-width: 3px;
+    border-color: #1a252f;
+}
+
+.subtitle {
+    color: #bdc3c7;
+    font-size: 14px;
+}
+
+/* === 卡片布局 === */
+.card {
+    background-color: #ffffff;
+    margin: 10px;
+    padding: 15px;
+    border-width: 1px;
+    border-color: #dddddd;
+}
+
+.card-title {
+    color: #2980b9;
+    font-size: 18px;
+}
+
+/* === CSS 颜色测试 === */
+.color-box {
+    padding: 10px;
+    margin: 5px;
+}
+
+.red-box {
+    background-color: #e74c3c;
+    color: #ffffff;
+}
+
+.green-box {
+    background-color: #2ecc71;
+    color: #ffffff;
+}
+
+.blue-box {
+    background-color: #3498db;
+    color: #ffffff;
+}
+
+.rgb-box {
+    background-color: rgb(155, 89, 182);
+    color: rgb(255, 255, 255);
+}
+
+.named-box {
+    background-color: orange;
+    color: white;
+}
+
+/* === 盒模型测试 === */
+.box-model {
+    background-color: #ecf0f1;
+    margin: 15px;
+    padding: 20px;
+    border-width: 4px;
+    border-color: #95a5a6;
+}
+
+.inner-box {
+    background-color: #3498db;
+    color: #ffffff;
+    padding: 10px;
+    margin: 10px;
+    border-width: 2px;
+    border-color: #2980b9;
+}
+
+/* === 宽度测试 === */
+.width-100 {
+    background-color: #1abc9c;
+    color: #ffffff;
+    padding: 8px;
+    width: 100%;
+}
+
+.width-half {
+    background-color: #e67e22;
+    color: #ffffff;
+    padding: 8px;
+    width: 50%;
+}
+
+.width-quarter {
+    background-color: #9b59b6;
+    color: #ffffff;
+    padding: 8px;
+    width: 25%;
+}
+
+/* === 选择器测试 === */
+#special {
+    background-color: #e74c3c;
+    color: #ffffff;
+    padding: 10px;
+}
+
+.highlight {
+    background-color: #f1c40f;
+    color: #333333;
+    padding: 5px;
+}
+
+div p {
+    color: #8e44ad;
+    font-size: 15px;
+}
+
+/* === display 测试 === */
+.hidden {
+    display: none;
+}
+
+.visible {
+    background-color: #27ae60;
+    color: #ffffff;
+    padding: 10px;
+}
+
+/* === 嵌套测试 === */
+.nest-1 {
+    background-color: #2c3e50;
+    padding: 15px;
+}
+
+.nest-2 {
+    background-color: #34495e;
+    padding: 15px;
+}
+
+.nest-3 {
+    background-color: #5d6d7e;
+    padding: 15px;
+}
+
+.nest-4 {
+    background-color: #85929e;
+    color: #ffffff;
+    padding: 15px;
+}
+</style>
+</head>
+<body>
+
+<!-- 标题区域 -->
+<div class="header">
+    <div class="card-title">Mini Browser Test Page</div>
+    <div class="subtitle">mini-browser 引擎能力综合测试</div>
+</div>
+
+<!-- 测试 1: 基本文本 -->
+<div class="card">
+    <div class="card-title">1. Basic Text</div>
+    <p>Hello from mini-browser!</p>
+    <p>This page tests HTML parsing, CSS styling, box model, and rendering.</p>
+</div>
+
+<!-- 测试 2: CSS 颜色 -->
+<div class="card">
+    <div class="card-title">2. CSS Colors</div>
+    <div class="color-box red-box">HEX color: #e74c3c</div>
+    <div class="color-box green-box">HEX color: #2ecc71</div>
+    <div class="color-box blue-box">HEX color: #3498db</div>
+    <div class="color-box rgb-box">RGB color: rgb(155, 89, 182)</div>
+    <div class="color-box named-box">Named color: orange</div>
+</div>
+
+<!-- 测试 3: 盒模型 -->
+<div class="card">
+    <div class="card-title">3. Box Model</div>
+    <div class="box-model">
+        Outer box (margin: 15px, padding: 20px, border: 4px)
+        <div class="inner-box">
+            Inner box (margin: 10px, padding: 10px, border: 2px)
+        </div>
+    </div>
+</div>
+
+<!-- 测试 4: 宽度 -->
+<div class="card">
+    <div class="card-title">4. Width</div>
+    <div class="width-100">width: 100%</div>
+    <div class="width-half">width: 50%</div>
+    <div class="width-quarter">width: 25%</div>
+</div>
+
+<!-- 测试 5: 选择器 -->
+<div class="card">
+    <div class="card-title">5. Selectors</div>
+    <p>Descendant selector (div p): this text should be purple</p>
+    <div id="special">ID selector (#special): this should have red background</div>
+    <div class="highlight">Class selector (.highlight): this should have yellow background</div>
+</div>
+
+<!-- 测试 6: display:none -->
+<div class="card">
+    <div class="card-title">6. Display</div>
+    <div class="visible">This is visible (display: block)</div>
+    <div class="hidden">You should NOT see this text (display: none)</div>
+    <div class="visible">This is also visible</div>
+</div>
+
+<!-- 测试 7: 嵌套深度 -->
+<div class="card">
+    <div class="card-title">7. Nesting</div>
+    <div class="nest-1">
+        Level 1
+        <div class="nest-2">
+            Level 2
+            <div class="nest-3">
+                Level 3
+                <div class="nest-4">
+                    Level 4 - deepest nesting
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 测试 8: 内联 style 属性 -->
+<div class="card">
+    <div class="card-title">8. Inline Style</div>
+    <div style="background-color: #e91e63; color: #ffffff; padding: 10px; border-width: 2px; border-color: #c2185b;">
+        This uses inline style="" attribute
+    </div>
+</div>
+
+</body>
+</html>

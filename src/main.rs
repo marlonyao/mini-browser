@@ -17,8 +17,49 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Mini Browser",
         options,
-        Box::new(|_cc| Ok(Box::new(BrowserApp::default()))),
+        Box::new(|cc| {
+            // Load system CJK fonts for Chinese/Japanese/Korean support
+            let mut fonts = egui::FontDefinitions::default();
+            load_cjk_fonts(&mut fonts, cc);
+            cc.egui_ctx.set_fonts(fonts);
+            Ok(Box::new(BrowserApp::default()))
+        }),
     )
+}
+
+fn load_cjk_fonts(fonts: &mut egui::FontDefinitions, _cc: &eframe::CreationContext<'_>) {
+    // Try to load a CJK-capable font from the system
+    let cjk_font_paths = [
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/System/Library/Fonts/PingFang.ttc",           // macOS
+        "/System/Library/Fonts/STHeiti Medium.ttc",      // macOS alt
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",    // macOS alt
+        "C:\\Windows\\Fonts\\msyh.ttc",                     // Windows (Microsoft YaHei)
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", // Linux WenQuanYi
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",   // Linux WenQuanYi alt
+        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+    ];
+
+    for path in &cjk_font_paths {
+        if let Ok(font_data) = std::fs::read(path) {
+            fonts.font_data.insert(
+                "cjk".into(),
+                egui::FontData::from_owned(font_data),
+            );
+            // Extend the proportional font family with CJK font
+            fonts.families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .push("cjk".into());
+            fonts.families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .push("cjk".into());
+            break;
+        }
+    }
 }
 
 #[derive(Default)]
@@ -30,6 +71,7 @@ struct BrowserApp {
 
 struct PageResult {
     display_list: Vec<DisplayCommand>,
+    content_height: f32,  // Total height of page content for scrolling
 }
 
 impl eframe::App for BrowserApp {
@@ -105,7 +147,14 @@ impl BrowserApp {
                 // Build display list
                 let display_list = mini_browser::paint::build_display_list(&layout_root);
 
-                self.page = Some(PageResult { display_list });
+                // Calculate total content height
+                let content_height = display_list.iter().map(|cmd| match cmd {
+                    DisplayCommand::SolidColor(rect, _) | DisplayCommand::Text(_, rect, _) | DisplayCommand::Border(rect, _, _) => {
+                        rect.y + rect.height
+                    }
+                }).fold(0.0f32, f32::max);
+
+                self.page = Some(PageResult { display_list, content_height });
                 self.error = None;
             }
             Err(e) => {
@@ -116,62 +165,71 @@ impl BrowserApp {
     }
 
     fn render_page(&self, ui: &mut egui::Ui, page: &PageResult) {
-        // Use a painter to draw the display commands
-        let painter = ui.painter();
-        let available = ui.available_rect_before_wrap();
+        let content_height = page.content_height.max(ui.available_height());
 
-        for cmd in &page.display_list {
-            match cmd {
-                DisplayCommand::SolidColor(rect, color) => {
-                    let egui_rect = egui::Rect::from_min_max(
-                        egui::pos2(available.min.x + rect.x, available.min.y + rect.y),
-                        egui::pos2(
-                            available.min.x + rect.x + rect.width,
-                            available.min.y + rect.y + rect.height,
-                        ),
-                    );
-                    let egui_color = egui::Color32::from_rgb(
-                        (color.r * 255.0) as u8,
-                        (color.g * 255.0) as u8,
-                        (color.b * 255.0) as u8,
-                    );
-                    painter.rect_filled(egui_rect, 0.0, egui_color);
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                // Allocate space for the full page content
+                let (_id, rect) = ui.allocate_space(
+                    egui::vec2(ui.available_width(), content_height)
+                );
+                let painter = ui.painter_at(rect);
+                let origin = rect.min;
+
+                for cmd in &page.display_list {
+                    match cmd {
+                        DisplayCommand::SolidColor(cmd_rect, color) => {
+                            let egui_rect = egui::Rect::from_min_max(
+                                egui::pos2(origin.x + cmd_rect.x, origin.y + cmd_rect.y),
+                                egui::pos2(
+                                    origin.x + cmd_rect.x + cmd_rect.width,
+                                    origin.y + cmd_rect.y + cmd_rect.height,
+                                ),
+                            );
+                            let egui_color = egui::Color32::from_rgb(
+                                (color.r * 255.0) as u8,
+                                (color.g * 255.0) as u8,
+                                (color.b * 255.0) as u8,
+                            );
+                            painter.rect_filled(egui_rect, 0.0, egui_color);
+                        }
+                        DisplayCommand::Text(text, cmd_rect, color) => {
+                            let pos = egui::pos2(
+                                origin.x + cmd_rect.x,
+                                origin.y + cmd_rect.y,
+                            );
+                            let egui_color = egui::Color32::from_rgb(
+                                (color.r * 255.0) as u8,
+                                (color.g * 255.0) as u8,
+                                (color.b * 255.0) as u8,
+                            );
+                            painter.text(
+                                pos,
+                                egui::Align2::LEFT_TOP,
+                                text,
+                                egui::FontId::proportional(16.0),
+                                egui_color,
+                            );
+                        }
+                        DisplayCommand::Border(cmd_rect, _bw, color) => {
+                            let egui_rect = egui::Rect::from_min_max(
+                                egui::pos2(origin.x + cmd_rect.x, origin.y + cmd_rect.y),
+                                egui::pos2(
+                                    origin.x + cmd_rect.x + cmd_rect.width,
+                                    origin.y + cmd_rect.y + cmd_rect.height,
+                                ),
+                            );
+                            let egui_color = egui::Color32::from_rgb(
+                                (color.r * 255.0) as u8,
+                                (color.g * 255.0) as u8,
+                                (color.b * 255.0) as u8,
+                            );
+                            painter.rect_stroke(egui_rect, 0.0, egui::Stroke::new(2.0, egui_color), egui::StrokeKind::Outside);
+                        }
+                    }
                 }
-                DisplayCommand::Text(text, rect, color) => {
-                    let pos = egui::pos2(
-                        available.min.x + rect.x,
-                        available.min.y + rect.y,
-                    );
-                    let egui_color = egui::Color32::from_rgb(
-                        (color.r * 255.0) as u8,
-                        (color.g * 255.0) as u8,
-                        (color.b * 255.0) as u8,
-                    );
-                    painter.text(
-                        pos,
-                        egui::Align2::LEFT_TOP,
-                        text,
-                        egui::FontId::proportional(16.0),
-                        egui_color,
-                    );
-                }
-                DisplayCommand::Border(rect, _bw, color) => {
-                    let egui_rect = egui::Rect::from_min_max(
-                        egui::pos2(available.min.x + rect.x, available.min.y + rect.y),
-                        egui::pos2(
-                            available.min.x + rect.x + rect.width,
-                            available.min.y + rect.y + rect.height,
-                        ),
-                    );
-                    let egui_color = egui::Color32::from_rgb(
-                        (color.r * 255.0) as u8,
-                        (color.g * 255.0) as u8,
-                        (color.b * 255.0) as u8,
-                    );
-                    painter.rect_stroke(egui_rect, 0.0, egui::Stroke::new(2.0, egui_color), egui::StrokeKind::Outside);
-                }
-            }
-        }
+            });
     }
 }
 
