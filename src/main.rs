@@ -5,34 +5,34 @@ use mini_browser::css::parser::{parse_css, Stylesheet};
 use mini_browser::style::{style_tree, print_style_tree};
 use mini_browser::dom::Node;
 use mini_browser::layout::{build_layout_tree, layout, print_layout_box, Dimensions, Rect};
-use mini_browser::paint::{build_display_list, render_to_terminal, render_to_ppm};
+use mini_browser::paint::{build_display_list, render_to_terminal, render_to_ppm, render_to_buffer};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
 
     let mut render_mode = false;
     let mut ppm_path = None;
+    let mut gui_mode = false;
     let mut url = None;
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--render" => render_mode = true,
+            "--gui" => gui_mode = true,
             "--ppm" => {
                 i += 1;
                 if i < args.len() {
                     ppm_path = Some(args[i].clone());
                 } else {
-                    eprintln!("Usage: mini-browser <url> [--render] [--ppm <file>]");
-                    std::process::exit(1);
+                    usage();
                 }
             }
             _ => {
                 if url.is_none() {
                     url = Some(args[i].clone());
                 } else {
-                    eprintln!("Usage: mini-browser <url> [--render] [--ppm <file>]");
-                    std::process::exit(1);
+                    usage();
                 }
             }
         }
@@ -41,15 +41,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let url = match url {
         Some(u) => Url::parse(&u)?,
-        None => {
-            eprintln!("Usage: mini-browser <url> [--render] [--ppm <file>]");
-            std::process::exit(1);
-        }
+        None => usage(),
     };
 
-    println!("Fetching {}://{}{}...", url.scheme, url.host, url.path);
-
-    let body = fetch(&url)?;
+    let body = if url.scheme == "file" {
+        std::fs::read_to_string(&url.path)?
+    } else {
+        println!("Fetching {}://{}{}...", url.scheme, url.host, url.path);
+        fetch(&url)?
+    };
     let dom = parse_html(&body);
 
     // Extract inline stylesheets from <style> tags
@@ -73,7 +73,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     layout(&mut layout_root, viewport);
 
-    if render_mode {
+    if gui_mode {
+        let display_list = build_display_list(&layout_root);
+        let buffer = render_to_buffer(&display_list, 800, 600);
+
+        let mut window = minifb::Window::new(
+            "Mini Browser",
+            800,
+            600,
+            minifb::WindowOptions::default(),
+        ).map_err(|e| format!("Failed to create window: {}", e))?;
+
+        // Limit to ~60fps
+        window.limit_update_rate(Some(std::time::Duration::from_secs_f64(1.0 / 60.0)));
+
+        println!("\nGUI window opened. Close window or press Escape to exit.");
+
+        while window.is_open() && !window.is_key_down(minifb::Key::Escape) {
+            window.update_with_buffer(&buffer, 800, 600)
+                .map_err(|e| format!("Failed to update buffer: {}", e))?;
+        }
+
+        println!("Window closed.");
+    } else if render_mode {
         let display_list = build_display_list(&layout_root);
         let output = render_to_terminal(&display_list, 80, 24);
         println!("\nTerminal Render:");
@@ -90,6 +112,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn usage() -> ! {
+    eprintln!("Usage: mini-browser <url> [--render] [--gui] [--ppm <file>]");
+    std::process::exit(1);
 }
 
 fn collect_styles(node: &Node, stylesheet: &mut Stylesheet) {

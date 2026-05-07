@@ -1,5 +1,7 @@
 use crate::dom::Node;
 use crate::layout::{parse_value, BoxType, LayoutBox, Rect};
+use fontdue::layout::{Layout, TextStyle, CoordinateSystem};
+use fontdue::Font;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Color {
@@ -216,19 +218,25 @@ fn build_display_list_inner(
             .and_then(|v| parse_color(v))
             .unwrap_or_else(Color::black);
 
-        let font_size = parse_value(styled.specified_values.get("font-size")).max(1.0);
+        let font_size = parse_value(styled.specified_values.get("font-size")).max(16.0);
         let line_height = font_size * 1.2;
+        let char_width = font_size * 0.6; // rough estimate
 
         let mut text_y = dim.content.y;
         for child in &styled.children {
             if let Node::Text(text) = &child.node {
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
+                    // Calculate how many lines this text needs
+                    let text_width = trimmed.chars().count() as f32 * char_width;
+                    let num_lines = ((text_width / dim.content.width).ceil() as usize).max(1);
+                    let text_height = line_height * num_lines as f32;
+
                     let text_rect = Rect {
                         x: dim.content.x,
                         y: text_y,
                         width: dim.content.width,
-                        height: line_height,
+                        height: text_height,
                     };
                     if let Some(clipped) = rect_intersect(&text_rect, clip) {
                         list.push(DisplayCommand::Text(
@@ -237,7 +245,7 @@ fn build_display_list_inner(
                             color.clone(),
                         ));
                     }
-                    text_y += line_height;
+                    text_y += text_height;
                 }
             }
         }
@@ -358,38 +366,105 @@ pub fn render_to_terminal(commands: &[DisplayCommand], width: usize, height: usi
     result
 }
 
-pub fn render_to_ppm(commands: &[DisplayCommand], width: usize, height: usize) -> String {
+/// Render display commands to a pixel buffer (shared by PPM and GUI)
+pub fn render_to_pixels(commands: &[DisplayCommand], width: usize, height: usize) -> Vec<Vec<Color>> {
     let mut pixels = vec![vec![Color::white(); width]; height];
+
+    // Load default font
+    let font_data = include_bytes!("/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf");
+    let font = Font::from_bytes(font_data as &[u8], fontdue::FontSettings::default()).unwrap();
+    let font_bold_data = include_bytes!("/usr/share/fonts/liberation-sans/LiberationSans-Bold.ttf");
+    let font_bold = Font::from_bytes(font_bold_data as &[u8], fontdue::FontSettings::default()).unwrap();
+    let fonts = &[&font, &font_bold];
 
     for cmd in commands {
         match cmd {
             DisplayCommand::SolidColor(rect, color) => {
-                fill_rect_ppm(&mut pixels, rect, color, width, height);
+                fill_rect(&mut pixels, rect, color, width, height);
             }
             DisplayCommand::Border(rect, bw, color) => {
-                draw_border_ppm(&mut pixels, rect, *bw, color, width, height);
+                draw_border(&mut pixels, rect, *bw, color, width, height);
             }
             DisplayCommand::Text(text, rect, color) => {
-                let x0 = rect.x.max(0.0) as usize;
-                let y0 = rect.y.max(0.0) as usize;
-                let x1 = ((rect.x + rect.width).ceil() as usize).min(width);
-                let y1 = ((rect.y + rect.height).ceil() as usize).min(height);
-                let mut x = x0;
-                let mut y = y0;
-                for _ch in text.chars() {
-                    if x < x1 && y < y1 {
-                        pixels[y][x] = color.clone();
-                    }
-                    x += 1;
-                    if x >= x1 {
-                        x = x0;
-                        y += 1;
-                    }
-                }
+                let font_size = 16.0f32; // default font size
+                render_text(&mut pixels, text, rect, color, width, height, fonts, font_size);
             }
         }
     }
 
+    pixels
+}
+
+/// Render text using fontdue for glyph rasterization
+fn render_text(
+    pixels: &mut [Vec<Color>],
+    text: &str,
+    rect: &Rect,
+    color: &Color,
+    width: usize,
+    height: usize,
+    fonts: &[&Font],
+    font_size: f32,
+) {
+    use fontdue::layout::{LayoutSettings, WrapStyle, HorizontalAlign, VerticalAlign};
+
+    let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+    let settings = LayoutSettings {
+        x: 0.0,
+        y: 0.0,
+        max_width: Some(rect.width),
+        max_height: None,
+        wrap_style: WrapStyle::Word,
+        wrap_hard_breaks: true,
+        horizontal_align: HorizontalAlign::Left,
+        vertical_align: VerticalAlign::Top,
+        line_height: 0.0,
+    };
+    layout.append(fonts, &TextStyle::new(text, font_size, 0));
+
+    // If layout didn't wrap (no max_width set in append), we need to use settings
+    layout.reset(&settings);
+    layout.append(fonts, &TextStyle::new(text, font_size, 0));
+
+    let x0 = rect.x.max(0.0) as i32;
+    let y0 = rect.y.max(0.0) as i32;
+
+    for glyph in layout.glyphs() {
+        let (metrics, bitmap) = fonts[glyph.font_index].rasterize_config(glyph.key);
+        let gw = metrics.width;
+        let gh = metrics.height;
+
+        let gx = x0 + glyph.x as i32;
+        let gy = y0 + glyph.y as i32;
+
+        for row_idx in 0..gh {
+            let py = gy + row_idx as i32;
+            if py < 0 || py >= height as i32 {
+                continue;
+            }
+            for col_idx in 0..gw {
+                let px = gx + col_idx as i32;
+                if px < 0 || px >= width as i32 {
+                    continue;
+                }
+                let alpha = bitmap[row_idx * gw + col_idx];
+                if alpha > 0 {
+                    let a = alpha as f32 / 255.0;
+                    let bg = &pixels[py as usize][px as usize];
+                    // Alpha blend
+                    let r = color.r * a + bg.r * (1.0 - a);
+                    let g = color.g * a + bg.g * (1.0 - a);
+                    let b = color.b * a + bg.b * (1.0 - a);
+                    pixels[py as usize][px as usize] = Color::new(r, g, b, 1.0);
+                }
+            }
+        }
+    }
+}
+
+/// Convert pixel buffer to PPM string
+pub fn render_to_ppm(commands: &[DisplayCommand], width: usize, height: usize) -> String {
+    let pixels = render_to_pixels(commands, width, height);
     let mut result = format!("P3\n{} {}\n255\n", width, height);
     for row in &pixels {
         for pixel in row {
@@ -405,7 +480,23 @@ pub fn render_to_ppm(commands: &[DisplayCommand], width: usize, height: usize) -
     result
 }
 
-fn fill_rect_ppm(
+/// Render display commands to a minifb u32 buffer (RGBA packed)
+pub fn render_to_buffer(commands: &[DisplayCommand], width: usize, height: usize) -> Vec<u32> {
+    let pixels = render_to_pixels(commands, width, height);
+    let mut buffer = vec![0u32; width * height];
+    for y in 0..height {
+        for x in 0..width {
+            let c = &pixels[y][x];
+            let r = (c.r * 255.0) as u32;
+            let g = (c.g * 255.0) as u32;
+            let b = (c.b * 255.0) as u32;
+            buffer[y * width + x] = (r << 16) | (g << 8) | b;
+        }
+    }
+    buffer
+}
+
+fn fill_rect(
     pixels: &mut [Vec<Color>],
     rect: &Rect,
     color: &Color,
@@ -423,7 +514,7 @@ fn fill_rect_ppm(
     }
 }
 
-fn draw_border_ppm(
+fn draw_border(
     pixels: &mut [Vec<Color>],
     rect: &Rect,
     bw: f32,

@@ -119,7 +119,9 @@ fn parse_declarations(tokens: &[CssToken], pos: usize) -> Option<(Vec<Declaratio
 
     while pos < tokens.len() && tokens[pos] != CssToken::RBrace {
         if let Some((decl, new_pos)) = parse_declaration(tokens, pos) {
-            declarations.push(decl);
+            // Expand shorthand properties
+            let expanded = expand_shorthand(decl);
+            declarations.extend(expanded);
             pos = new_pos;
         } else {
             // Skip unknown tokens until semicolon or RBrace
@@ -137,6 +139,79 @@ fn parse_declarations(tokens: &[CssToken], pos: usize) -> Option<(Vec<Declaratio
     }
 
     Some((declarations, pos))
+}
+
+/// Expand CSS shorthand properties like `padding: 10px` into individual properties.
+fn expand_shorthand(decl: Declaration) -> Vec<Declaration> {
+    let parts: Vec<&str> = decl.value.split_whitespace().collect();
+    match decl.property.as_str() {
+        "padding" => expand_box("padding", &parts),
+        "margin" => expand_box("margin", &parts),
+        "border" => expand_border_shorthand(&parts),
+        "border-width" => expand_box("border", &parts).into_iter().map(|d| {
+            Declaration { property: format!("{}-width", d.property), value: d.value }
+        }).collect(),
+        "border-color" => expand_box("border", &parts).into_iter().map(|d| {
+            Declaration { property: format!("{}-color", d.property), value: d.value }
+        }).collect(),
+        _ => vec![decl],
+    }
+}
+
+/// Expand 1-4 value box shorthand (top right bottom left)
+/// 1 value: all sides
+/// 2 values: top/bottom, left/right  
+/// 3 values: top, left/right, bottom
+/// 4 values: top, right, bottom, left
+fn expand_box(prefix: &str, parts: &[&str]) -> Vec<Declaration> {
+    match parts.len() {
+        1 => vec![
+            Declaration { property: format!("{}-top", prefix), value: parts[0].to_string() },
+            Declaration { property: format!("{}-right", prefix), value: parts[0].to_string() },
+            Declaration { property: format!("{}-bottom", prefix), value: parts[0].to_string() },
+            Declaration { property: format!("{}-left", prefix), value: parts[0].to_string() },
+        ],
+        2 => vec![
+            Declaration { property: format!("{}-top", prefix), value: parts[0].to_string() },
+            Declaration { property: format!("{}-right", prefix), value: parts[1].to_string() },
+            Declaration { property: format!("{}-bottom", prefix), value: parts[0].to_string() },
+            Declaration { property: format!("{}-left", prefix), value: parts[1].to_string() },
+        ],
+        3 => vec![
+            Declaration { property: format!("{}-top", prefix), value: parts[0].to_string() },
+            Declaration { property: format!("{}-right", prefix), value: parts[1].to_string() },
+            Declaration { property: format!("{}-bottom", prefix), value: parts[2].to_string() },
+            Declaration { property: format!("{}-left", prefix), value: parts[1].to_string() },
+        ],
+        4 => vec![
+            Declaration { property: format!("{}-top", prefix), value: parts[0].to_string() },
+            Declaration { property: format!("{}-right", prefix), value: parts[1].to_string() },
+            Declaration { property: format!("{}-bottom", prefix), value: parts[2].to_string() },
+            Declaration { property: format!("{}-left", prefix), value: parts[3].to_string() },
+        ],
+        _ => vec![],
+    }
+}
+
+/// Expand `border: 2px solid black` → border-width + border-color
+fn expand_border_shorthand(parts: &[&str]) -> Vec<Declaration> {
+    let mut width = None;
+    let mut color = None;
+    for part in parts {
+        if part.ends_with("px") || part.parse::<f32>().is_ok() {
+            width = Some(*part);
+        } else if part != &"solid" && part != &"dashed" && part != &"dotted" && part != &"none" {
+            color = Some(*part);
+        }
+    }
+    let mut result = Vec::new();
+    if let Some(w) = width {
+        result.push(Declaration { property: "border-width".to_string(), value: w.to_string() });
+    }
+    if let Some(c) = color {
+        result.push(Declaration { property: "border-color".to_string(), value: c.to_string() });
+    }
+    result
 }
 
 fn parse_declaration(tokens: &[CssToken], pos: usize) -> Option<(Declaration, usize)> {
@@ -198,6 +273,14 @@ fn parse_value(tokens: &[CssToken], pos: usize) -> Option<(String, usize)> {
                     value.push(' ');
                 }
                 value.push_str(&format!("{}{}", n, u));
+                pos += 1;
+            }
+            CssToken::Hash(hash) => {
+                if !value.is_empty() {
+                    value.push(' ');
+                }
+                value.push('#');
+                value.push_str(hash);
                 pos += 1;
             }
             _ => {

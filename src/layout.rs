@@ -1,5 +1,7 @@
 use crate::dom::Node;
 use crate::style::StyledNode;
+use fontdue::layout::{Layout, TextStyle, CoordinateSystem, LayoutSettings, WrapStyle, HorizontalAlign, VerticalAlign};
+use fontdue::Font;
 
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct Rect {
@@ -68,6 +70,11 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
         if let Node::Text(_) = &child.node {
             continue;
         }
+        if let Node::Element(el) = &child.node {
+            if matches!(el.tag.as_str(), "head" | "style" | "script" | "meta" | "link" | "title") {
+                continue;
+            }
+        }
 
         let child_display = child.specified_values.get("display").map(|s| s.as_str());
         let is_inline = child_display == Some("inline");
@@ -92,6 +99,8 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
         root.children.push(anonymous);
     }
 
+    // Pre-calculate minimum content height from text (rough estimate with max width)
+    // Will be refined during actual layout with correct width
     root
 }
 
@@ -180,8 +189,57 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
                 + last.dimensions.border.bottom
                 + last.dimensions.margin.bottom
         };
-        layout_box.dimensions.content.height = content_bottom - layout_box.dimensions.content.y;
+        let computed = content_bottom - layout_box.dimensions.content.y;
+
+        // If height is 0 but we have text content, calculate minimum text height
+        if computed <= 0.0 {
+            if let Some(styled) = styled.as_ref() {
+                let text_height = measure_text_height(styled, layout_box.dimensions.content.width);
+                if text_height > 0.0 {
+                    layout_box.dimensions.content.height = text_height;
+                } else {
+                    layout_box.dimensions.content.height = computed;
+                }
+            } else {
+                layout_box.dimensions.content.height = computed;
+            }
+        } else {
+            layout_box.dimensions.content.height = computed;
+        }
     }
+}
+
+/// Measure actual text height using fontdue layout
+fn measure_text_height(styled: &StyledNode, container_width: f32) -> f32 {
+    let font_data = include_bytes!("/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf");
+    let font = Font::from_bytes(font_data as &[u8], fontdue::FontSettings::default()).unwrap();
+    let fonts = &[&font];
+    let font_size = 16.0f32;
+
+    let mut total_height = 0.0f32;
+    for child in &styled.children {
+        if let Node::Text(text) = &child.node {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+                let settings = LayoutSettings {
+                    x: 0.0,
+                    y: 0.0,
+                    max_width: if container_width > 0.0 { Some(container_width) } else { None },
+                    max_height: None,
+                    wrap_style: WrapStyle::Word,
+                    wrap_hard_breaks: true,
+                    horizontal_align: HorizontalAlign::Left,
+                    vertical_align: VerticalAlign::Top,
+                    line_height: 1.2,
+                };
+                layout.reset(&settings);
+                layout.append(fonts, &TextStyle::new(trimmed, font_size, 0));
+                total_height += layout.height();
+            }
+        }
+    }
+    total_height
 }
 
 fn get_length(styled: Option<&StyledNode>, property: &str, container_size: f32) -> f32 {
