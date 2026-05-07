@@ -1,7 +1,5 @@
 use crate::dom::Node;
 use crate::style::StyledNode;
-use fontdue::layout::{Layout, TextStyle, CoordinateSystem, LayoutSettings, WrapStyle, HorizontalAlign, VerticalAlign};
-use fontdue::Font;
 
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct Rect {
@@ -209,33 +207,24 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     }
 }
 
-/// Measure actual text height using fontdue layout
+/// Estimate text height based on character count and container width
 fn measure_text_height(styled: &StyledNode, container_width: f32) -> f32 {
-    let font_data = include_bytes!("/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf");
-    let font = Font::from_bytes(font_data as &[u8], fontdue::FontSettings::default()).unwrap();
-    let fonts = &[&font];
     let font_size = 16.0f32;
+    let line_height = font_size * 1.2;
+    let char_width = font_size * 0.5; // approximate
 
     let mut total_height = 0.0f32;
     for child in &styled.children {
         if let Node::Text(text) = &child.node {
             let trimmed = text.trim();
             if !trimmed.is_empty() {
-                let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
-                let settings = LayoutSettings {
-                    x: 0.0,
-                    y: 0.0,
-                    max_width: if container_width > 0.0 { Some(container_width) } else { None },
-                    max_height: None,
-                    wrap_style: WrapStyle::Word,
-                    wrap_hard_breaks: true,
-                    horizontal_align: HorizontalAlign::Left,
-                    vertical_align: VerticalAlign::Top,
-                    line_height: 1.2,
+                let text_width = trimmed.len() as f32 * char_width;
+                let lines = if container_width > 0.0 {
+                    (text_width / container_width).ceil().max(1.0)
+                } else {
+                    1.0
                 };
-                layout.reset(&settings);
-                layout.append(fonts, &TextStyle::new(trimmed, font_size, 0));
-                total_height += layout.height();
+                total_height += line_height * lines;
             }
         }
     }

@@ -1,122 +1,178 @@
-use mini_browser::network::url::Url;
-use mini_browser::network::fetch;
+use eframe::egui;
 use mini_browser::html::parser::parse_html;
 use mini_browser::css::parser::{parse_css, Stylesheet};
-use mini_browser::style::{style_tree, print_style_tree};
+use mini_browser::style::style_tree;
 use mini_browser::dom::Node;
-use mini_browser::layout::{build_layout_tree, layout, print_layout_box, Dimensions, Rect};
-use mini_browser::paint::{build_display_list, render_to_terminal, render_to_ppm, render_to_buffer};
+use mini_browser::layout::{build_layout_tree, layout, Dimensions, Rect};
+use mini_browser::paint::DisplayCommand;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().collect();
-
-    let mut render_mode = false;
-    let mut ppm_path = None;
-    let mut gui_mode = false;
-    let mut url = None;
-
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--render" => render_mode = true,
-            "--gui" => gui_mode = true,
-            "--ppm" => {
-                i += 1;
-                if i < args.len() {
-                    ppm_path = Some(args[i].clone());
-                } else {
-                    usage();
-                }
-            }
-            _ => {
-                if url.is_none() {
-                    url = Some(args[i].clone());
-                } else {
-                    usage();
-                }
-            }
-        }
-        i += 1;
-    }
-
-    let url = match url {
-        Some(u) => Url::parse(&u)?,
-        None => usage(),
+fn main() -> eframe::Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([800.0, 600.0])
+            .with_title("Mini Browser"),
+        ..Default::default()
     };
 
-    let body = if url.scheme == "file" {
-        std::fs::read_to_string(&url.path)?
-    } else {
-        println!("Fetching {}://{}{}...", url.scheme, url.host, url.path);
-        fetch(&url)?
-    };
-    let dom = parse_html(&body);
-
-    // Extract inline stylesheets from <style> tags
-    let mut stylesheet = Stylesheet { rules: Vec::new() };
-    collect_styles(&dom, &mut stylesheet);
-
-    // Build styled tree
-    let styled = style_tree(&dom, &stylesheet);
-
-    // Print styled tree
-    println!("\nStyled Tree:");
-    print_style_tree(&styled, 0);
-
-    // Build layout tree
-    let mut layout_root = build_layout_tree(&styled);
-
-    // Layout with fixed viewport width
-    let viewport = Dimensions {
-        content: Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 },
-        ..Dimensions::default()
-    };
-    layout(&mut layout_root, viewport);
-
-    if gui_mode {
-        let display_list = build_display_list(&layout_root);
-        let buffer = render_to_buffer(&display_list, 800, 600);
-
-        let mut window = minifb::Window::new(
-            "Mini Browser",
-            800,
-            600,
-            minifb::WindowOptions::default(),
-        ).map_err(|e| format!("Failed to create window: {}", e))?;
-
-        // Limit to ~60fps
-        window.limit_update_rate(Some(std::time::Duration::from_secs_f64(1.0 / 60.0)));
-
-        println!("\nGUI window opened. Close window or press Escape to exit.");
-
-        while window.is_open() && !window.is_key_down(minifb::Key::Escape) {
-            window.update_with_buffer(&buffer, 800, 600)
-                .map_err(|e| format!("Failed to update buffer: {}", e))?;
-        }
-
-        println!("Window closed.");
-    } else if render_mode {
-        let display_list = build_display_list(&layout_root);
-        let output = render_to_terminal(&display_list, 80, 24);
-        println!("\nTerminal Render:");
-        println!("{}", output);
-    } else if let Some(path) = ppm_path {
-        let display_list = build_display_list(&layout_root);
-        let ppm = render_to_ppm(&display_list, 800, 600);
-        std::fs::write(&path, ppm)?;
-        println!("\nExported PPM to {}", path);
-    } else {
-        // Default: print layout tree
-        println!("\nLayout Tree:");
-        print_layout_box(&layout_root, 0);
-    }
-
-    Ok(())
+    eframe::run_native(
+        "Mini Browser",
+        options,
+        Box::new(|_cc| Ok(Box::new(BrowserApp::default()))),
+    )
 }
 
-fn usage() -> ! {
-    eprintln!("Usage: mini-browser <url> [--render] [--gui] [--ppm <file>]");
-    std::process::exit(1);
+#[derive(Default)]
+struct BrowserApp {
+    url: String,
+    page: Option<PageResult>,
+    error: Option<String>,
+}
+
+struct PageResult {
+    display_list: Vec<DisplayCommand>,
+}
+
+impl eframe::App for BrowserApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Top bar - URL input
+        egui::TopBottomPanel::top("url_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("URL:");
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut self.url)
+                        .desired_width(600.0)
+                        .hint_text("file:///path/to/page.html"),
+                );
+                if ui.button("Go").clicked()
+                    || (ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        && response.has_focus())
+                {
+                    self.load_page();
+                }
+            });
+        });
+
+        // Main content area
+        egui::CentralPanel::default().show(ctx, |ui| {
+            if let Some(err) = &self.error {
+                ui.colored_label(egui::Color32::RED, err);
+            } else if let Some(page) = &self.page {
+                self.render_page(ui, page);
+            } else {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(200.0);
+                    ui.heading("Mini Browser");
+                    ui.label("Enter a file:// URL and press Go");
+                });
+            }
+        });
+    }
+}
+
+impl BrowserApp {
+    fn load_page(&mut self) {
+        let url = self.url.trim().to_string();
+        if url.is_empty() {
+            return;
+        }
+
+        // Parse URL
+        let path = if url.starts_with("file://") {
+            url[7..].to_string()
+        } else {
+            url.clone()
+        };
+
+        match std::fs::read_to_string(&path) {
+            Ok(html) => {
+                let dom = parse_html(&html);
+
+                // Extract inline stylesheets
+                let mut stylesheet = Stylesheet { rules: Vec::new() };
+                collect_styles(&dom, &mut stylesheet);
+
+                // Build styled tree
+                let styled = style_tree(&dom, &stylesheet);
+
+                // Build layout tree
+                let mut layout_root = build_layout_tree(&styled);
+                let viewport = Dimensions {
+                    content: Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 },
+                    ..Dimensions::default()
+                };
+                layout(&mut layout_root, viewport);
+
+                // Build display list
+                let display_list = mini_browser::paint::build_display_list(&layout_root);
+
+                self.page = Some(PageResult { display_list });
+                self.error = None;
+            }
+            Err(e) => {
+                self.error = Some(format!("Failed to load: {}", e));
+                self.page = None;
+            }
+        }
+    }
+
+    fn render_page(&self, ui: &mut egui::Ui, page: &PageResult) {
+        // Use a painter to draw the display commands
+        let painter = ui.painter();
+        let available = ui.available_rect_before_wrap();
+
+        for cmd in &page.display_list {
+            match cmd {
+                DisplayCommand::SolidColor(rect, color) => {
+                    let egui_rect = egui::Rect::from_min_max(
+                        egui::pos2(available.min.x + rect.x, available.min.y + rect.y),
+                        egui::pos2(
+                            available.min.x + rect.x + rect.width,
+                            available.min.y + rect.y + rect.height,
+                        ),
+                    );
+                    let egui_color = egui::Color32::from_rgb(
+                        (color.r * 255.0) as u8,
+                        (color.g * 255.0) as u8,
+                        (color.b * 255.0) as u8,
+                    );
+                    painter.rect_filled(egui_rect, 0.0, egui_color);
+                }
+                DisplayCommand::Text(text, rect, color) => {
+                    let pos = egui::pos2(
+                        available.min.x + rect.x,
+                        available.min.y + rect.y,
+                    );
+                    let egui_color = egui::Color32::from_rgb(
+                        (color.r * 255.0) as u8,
+                        (color.g * 255.0) as u8,
+                        (color.b * 255.0) as u8,
+                    );
+                    painter.text(
+                        pos,
+                        egui::Align2::LEFT_TOP,
+                        text,
+                        egui::FontId::proportional(16.0),
+                        egui_color,
+                    );
+                }
+                DisplayCommand::Border(rect, _bw, color) => {
+                    let egui_rect = egui::Rect::from_min_max(
+                        egui::pos2(available.min.x + rect.x, available.min.y + rect.y),
+                        egui::pos2(
+                            available.min.x + rect.x + rect.width,
+                            available.min.y + rect.y + rect.height,
+                        ),
+                    );
+                    let egui_color = egui::Color32::from_rgb(
+                        (color.r * 255.0) as u8,
+                        (color.g * 255.0) as u8,
+                        (color.b * 255.0) as u8,
+                    );
+                    painter.rect_stroke(egui_rect, 0.0, egui::Stroke::new(2.0, egui_color), egui::StrokeKind::Outside);
+                }
+            }
+        }
+    }
 }
 
 fn collect_styles(node: &Node, stylesheet: &mut Stylesheet) {
