@@ -46,7 +46,7 @@ fn load_cjk_fonts(fonts: &mut egui::FontDefinitions, _cc: &eframe::CreationConte
         if let Ok(font_data) = std::fs::read(path) {
             fonts.font_data.insert(
                 "cjk".into(),
-                egui::FontData::from_owned(font_data),
+                std::sync::Arc::new(egui::FontData::from_owned(font_data)),
             );
             // Extend the proportional font family with CJK font
             fonts.families
