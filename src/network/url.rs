@@ -23,7 +23,13 @@ impl Url {
                 let port = host_port[idx + 1..].parse::<u16>()?;
                 (host, port)
             }
-            None => (host_port, 80),
+            None => {
+                let default_port = match scheme {
+                    "https" => 443,
+                    _ => 80,
+                };
+                (host_port, default_port)
+            }
         };
 
         Ok(Url {

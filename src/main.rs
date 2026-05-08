@@ -83,7 +83,7 @@ impl eframe::App for BrowserApp {
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.url)
                         .desired_width(600.0)
-                        .hint_text("file:///path/to/page.html"),
+                        .hint_text("https://example.com"),
                 );
                 if ui.button("Go").clicked()
                     || (ui.input(|i| i.key_pressed(egui::Key::Enter))
@@ -104,7 +104,7 @@ impl eframe::App for BrowserApp {
                 ui.vertical_centered(|ui| {
                     ui.add_space(200.0);
                     ui.heading("Mini Browser");
-                    ui.label("Enter a file:// URL and press Go");
+                    ui.label("Enter a URL (http/https/file) and press Enter");
                 });
             }
         });
@@ -119,13 +119,20 @@ impl BrowserApp {
         }
 
         // Parse URL
-        let path = if url.starts_with("file://") {
-            url[7..].to_string()
+        let html = if url.starts_with("file://") {
+            let path = &url[7..];
+            std::fs::read_to_string(path).map_err(|e| e.to_string())
+        } else if url.starts_with("http://") || url.starts_with("https://") {
+            match mini_browser::network::url::Url::parse(&url) {
+                Ok(parsed) => mini_browser::network::fetch(&parsed).map_err(|e| e.to_string()),
+                Err(e) => Err(e.to_string()),
+            }
         } else {
-            url.clone()
+            // Treat as file path
+            std::fs::read_to_string(&url).map_err(|e| e.to_string())
         };
 
-        match std::fs::read_to_string(&path) {
+        match html {
             Ok(html) => {
                 let dom = parse_html(&html);
 

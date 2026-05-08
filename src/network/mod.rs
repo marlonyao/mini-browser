@@ -1,23 +1,13 @@
 pub mod url;
 
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use url::Url;
 
+/// Fetch a URL using reqwest (supports both HTTP and HTTPS).
 pub fn fetch(url: &Url) -> Result<String, Box<dyn std::error::Error>> {
-    let address = format!("{}:{}", url.host, url.port);
-    let mut stream = TcpStream::connect(address)?;
-
-    let request = format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-        url.path, url.host
-    );
-    stream.write_all(request.as_bytes())?;
-
-    let mut response = String::new();
-    stream.read_to_string(&mut response)?;
-
-    parse_http_response(&response)
+    let full_url = format!("{}://{}:{}{}", url.scheme, url.host, url.port, url.path);
+    let response = reqwest::blocking::get(&full_url)?;
+    let body = response.text()?;
+    Ok(body)
 }
 
 pub fn parse_http_response(response: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -39,6 +29,15 @@ mod tests {
     #[ignore]
     fn test_fetch_example() {
         let url = Url::parse("http://example.com/").unwrap();
+        let body = fetch(&url).unwrap();
+        let lower = body.to_lowercase();
+        assert!(lower.contains("<html") || lower.contains("example"));
+    }
+
+    #[test]
+    #[ignore]
+    fn test_fetch_https() {
+        let url = Url::parse("https://example.com/").unwrap();
         let body = fetch(&url).unwrap();
         let lower = body.to_lowercase();
         assert!(lower.contains("<html") || lower.contains("example"));
