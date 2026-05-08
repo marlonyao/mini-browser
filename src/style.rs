@@ -106,7 +106,11 @@ br {
 img {
     display: inline;
 }
-input, textarea, select, button {
+input[type="hidden"] {
+    display: none;
+}
+
+input {
     display: inline-block;
 }
 blockquote {

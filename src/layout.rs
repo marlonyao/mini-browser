@@ -75,6 +75,9 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
         }
 
         let child_display = child.specified_values.get("display").map(|s| s.as_str());
+        if child_display == Some("none") {
+            continue;
+        }
         let is_inline = child_display == Some("inline");
 
         if is_inline {
@@ -116,6 +119,19 @@ pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
     }
 }
 
+fn set_absolute_positions(layout_box: &mut LayoutBox, abs_x: f32, abs_y: f32) {
+    let dim = &mut layout_box.dimensions;
+    let offset_x = abs_x - dim.content.x;
+    let offset_y = abs_y - dim.content.y;
+    dim.content.x = abs_x;
+    dim.content.y = abs_y;
+    for child in &mut layout_box.children {
+        let child_abs_x = child.dimensions.content.x + offset_x;
+        let child_abs_y = child.dimensions.content.y + offset_y;
+        set_absolute_positions(child, child_abs_x, child_abs_y);
+    }
+}
+
 fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     layout_box.dimensions.content.x = containing_block.content.x;
     layout_box.dimensions.content.y = containing_block.content.y;
@@ -150,14 +166,15 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
             line_height = 0.0;
         }
 
-        child.dimensions.content.x = current_x
+        let target_x = current_x
             + child.dimensions.margin.left
             + child.dimensions.border.left
             + child.dimensions.padding.left;
-        child.dimensions.content.y = current_y
+        let target_y = current_y
             + child.dimensions.margin.top
             + child.dimensions.border.top
             + child.dimensions.padding.top;
+        set_absolute_positions(child, target_x, target_y);
 
         current_x += child_total_width;
         line_height = line_height.max(child_total_height);
