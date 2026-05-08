@@ -5,6 +5,7 @@ use mini_browser::style::style_tree;
 use mini_browser::dom::Node;
 use mini_browser::layout::{build_layout_tree, layout, Dimensions, Rect};
 use mini_browser::paint::DisplayCommand;
+use std::sync::{Arc, Mutex};
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -67,6 +68,15 @@ struct BrowserApp {
     url: String,
     page: Option<PageResult>,
     error: Option<String>,
+    loading: bool,
+    // Shared state for background fetch
+    fetch_result: Option<Arc<Mutex<Option<FetchResult>>>>,
+    ctx_ref: Option<egui::Context>,
+}
+
+enum FetchResult {
+    Ok(PageResult),
+    Err(String),
 }
 
 struct PageResult {
@@ -76,6 +86,31 @@ struct PageResult {
 
 impl eframe::App for BrowserApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Save context for background thread wake-up
+        if self.ctx_ref.is_none() {
+            self.ctx_ref = Some(ctx.clone());
+        }
+
+        // Check if background fetch completed
+        if let Some(result_arc) = &self.fetch_result {
+            if let Ok(mut guard) = result_arc.lock() {
+                if guard.is_some() {
+                    let result = guard.take().unwrap();
+                    self.loading = false;
+                    match result {
+                        FetchResult::Ok(page) => {
+                            self.page = Some(page);
+                            self.error = None;
+                        }
+                        FetchResult::Err(e) => {
+                            self.error = Some(e);
+                            self.page = None;
+                        }
+                    }
+                }
+            }
+        }
+
         // Top bar - URL input
         egui::TopBottomPanel::top("url_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -85,10 +120,10 @@ impl eframe::App for BrowserApp {
                         .desired_width(600.0)
                         .hint_text("https://example.com"),
                 );
-                if ui.button("Go").clicked()
-                    || (ui.input(|i| i.key_pressed(egui::Key::Enter))
-                        && response.has_focus())
-                {
+                let go_clicked = ui.button(if self.loading { "⏳" } else { "Go" }).clicked();
+                let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    && response.has_focus();
+                if (go_clicked || enter_pressed) && !self.loading {
                     self.load_page();
                 }
             });
@@ -96,7 +131,13 @@ impl eframe::App for BrowserApp {
 
         // Main content area
         egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(err) = &self.error {
+            if self.loading {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(200.0);
+                    ui.spinner();
+                    ui.label("Loading...");
+                });
+            } else if let Some(err) = &self.error {
                 ui.colored_label(egui::Color32::RED, err);
             } else if let Some(page) = &self.page {
                 self.render_page(ui, page);
@@ -118,57 +159,25 @@ impl BrowserApp {
             return;
         }
 
-        // Parse URL
-        let html = if url.starts_with("file://") {
-            let path = &url[7..];
-            std::fs::read_to_string(path).map_err(|e| e.to_string())
-        } else if url.starts_with("http://") || url.starts_with("https://") {
-            match mini_browser::network::url::Url::parse(&url) {
-                Ok(parsed) => mini_browser::network::fetch(&parsed).map_err(|e| e.to_string()),
-                Err(e) => Err(e.to_string()),
+        self.loading = true;
+        self.error = None;
+        self.page = None;
+
+        let result_arc = Arc::new(Mutex::new(None));
+        self.fetch_result = Some(result_arc.clone());
+        let ctx = self.ctx_ref.clone();
+
+        std::thread::spawn(move || {
+            let result = fetch_and_render(&url);
+            {
+                let mut guard = result_arc.lock().unwrap();
+                *guard = Some(result);
             }
-        } else {
-            // Treat as file path
-            std::fs::read_to_string(&url).map_err(|e| e.to_string())
-        };
-
-        match html {
-            Ok(html) => {
-                let dom = parse_html(&html);
-
-                // Extract inline stylesheets
-                let mut stylesheet = Stylesheet { rules: Vec::new() };
-                collect_styles(&dom, &mut stylesheet);
-
-                // Build styled tree
-                let styled = style_tree(&dom, &stylesheet);
-
-                // Build layout tree
-                let mut layout_root = build_layout_tree(&styled);
-                let viewport = Dimensions {
-                    content: Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 },
-                    ..Dimensions::default()
-                };
-                layout(&mut layout_root, viewport);
-
-                // Build display list
-                let display_list = mini_browser::paint::build_display_list(&layout_root);
-
-                // Calculate total content height
-                let content_height = display_list.iter().map(|cmd| match cmd {
-                    DisplayCommand::SolidColor(rect, _) | DisplayCommand::Text(_, rect, _) | DisplayCommand::Border(rect, _, _) => {
-                        rect.y + rect.height
-                    }
-                }).fold(0.0f32, f32::max);
-
-                self.page = Some(PageResult { display_list, content_height });
-                self.error = None;
+            // Wake up the UI thread to repaint
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
             }
-            Err(e) => {
-                self.error = Some(format!("Failed to load: {}", e));
-                self.page = None;
-            }
-        }
+        });
     }
 
     fn render_page(&self, ui: &mut egui::Ui, page: &PageResult) {
@@ -237,6 +246,56 @@ impl BrowserApp {
                     }
                 }
             });
+    }
+}
+
+/// Fetch URL and render HTML into a PageResult (runs on background thread)
+fn fetch_and_render(url: &str) -> FetchResult {
+    let html_result = if url.starts_with("file://") {
+        let path = &url[7..];
+        std::fs::read_to_string(path).map_err(|e| e.to_string())
+    } else if url.starts_with("http://") || url.starts_with("https://") {
+        match mini_browser::network::url::Url::parse(url) {
+            Ok(parsed) => mini_browser::network::fetch(&parsed).map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    } else {
+        // Treat as file path
+        std::fs::read_to_string(url).map_err(|e| e.to_string())
+    };
+
+    match html_result {
+        Ok(html) => {
+            let dom = parse_html(&html);
+
+            // Extract inline stylesheets
+            let mut stylesheet = Stylesheet { rules: Vec::new() };
+            collect_styles(&dom, &mut stylesheet);
+
+            // Build styled tree
+            let styled = style_tree(&dom, &stylesheet);
+
+            // Build layout tree
+            let mut layout_root = build_layout_tree(&styled);
+            let viewport = Dimensions {
+                content: Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 },
+                ..Dimensions::default()
+            };
+            layout(&mut layout_root, viewport);
+
+            // Build display list
+            let display_list = mini_browser::paint::build_display_list(&layout_root);
+
+            // Calculate total content height
+            let content_height = display_list.iter().map(|cmd| match cmd {
+                DisplayCommand::SolidColor(rect, _) | DisplayCommand::Text(_, rect, _) | DisplayCommand::Border(rect, _, _) => {
+                    rect.y + rect.height
+                }
+            }).fold(0.0f32, f32::max);
+
+            FetchResult::Ok(PageResult { display_list, content_height })
+        }
+        Err(e) => FetchResult::Err(format!("Failed to load: {}", e)),
     }
 }
 
