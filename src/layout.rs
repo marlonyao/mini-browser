@@ -104,13 +104,145 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
 
 pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
     match layout_box.box_type {
-        BoxType::BlockNode(_) | BoxType::AnonymousBlock => {
+        BoxType::BlockNode(_) => {
             layout_block(layout_box, &containing_block);
+        }
+        BoxType::AnonymousBlock => {
+            layout_inline_block(layout_box, &containing_block);
         }
         BoxType::InlineNode(_) => {
-            layout_block(layout_box, &containing_block);
+            layout_inline_node(layout_box, &containing_block);
         }
     }
+}
+
+fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
+    layout_box.dimensions.content.x = containing_block.content.x;
+    layout_box.dimensions.content.y = containing_block.content.y;
+    layout_box.dimensions.content.width = containing_block.content.width;
+
+    let mut current_x = layout_box.dimensions.content.x;
+    let mut current_y = layout_box.dimensions.content.y;
+    let mut line_height = 0.0f32;
+    let available_width = layout_box.dimensions.content.width;
+
+    for child in &mut layout_box.children {
+        let mut child_containing = Dimensions::default();
+        child_containing.content.width = available_width;
+        layout(child, child_containing);
+
+        let child_total_width = child.dimensions.content.width
+            + child.dimensions.padding.left + child.dimensions.padding.right
+            + child.dimensions.border.left + child.dimensions.border.right
+            + child.dimensions.margin.left + child.dimensions.margin.right;
+
+        let child_total_height = child.dimensions.content.height
+            + child.dimensions.padding.top + child.dimensions.padding.bottom
+            + child.dimensions.border.top + child.dimensions.border.bottom
+            + child.dimensions.margin.top + child.dimensions.margin.bottom;
+
+        // Line wrap check
+        if current_x + child_total_width > layout_box.dimensions.content.x + available_width
+            && current_x > layout_box.dimensions.content.x
+        {
+            current_y += line_height;
+            current_x = layout_box.dimensions.content.x;
+            line_height = 0.0;
+        }
+
+        child.dimensions.content.x = current_x
+            + child.dimensions.margin.left
+            + child.dimensions.border.left
+            + child.dimensions.padding.left;
+        child.dimensions.content.y = current_y
+            + child.dimensions.margin.top
+            + child.dimensions.border.top
+            + child.dimensions.padding.top;
+
+        current_x += child_total_width;
+        line_height = line_height.max(child_total_height);
+    }
+
+    layout_box.dimensions.content.height = current_y + line_height - layout_box.dimensions.content.y;
+}
+
+fn layout_inline_node(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
+    let styled = match &layout_box.box_type {
+        BoxType::InlineNode(s) => Some(s.clone()),
+        _ => None,
+    };
+
+    // Compute inline box metrics
+    let padding_left = get_length(styled.as_ref(), "padding-left", containing_block.content.width);
+    let padding_right = get_length(styled.as_ref(), "padding-right", containing_block.content.width);
+    let border_left = get_length(styled.as_ref(), "border-left", containing_block.content.width);
+    let border_right = get_length(styled.as_ref(), "border-right", containing_block.content.width);
+    let margin_left = get_length(styled.as_ref(), "margin-left", containing_block.content.width);
+    let margin_right = get_length(styled.as_ref(), "margin-right", containing_block.content.width);
+    let padding_top = get_length(styled.as_ref(), "padding-top", containing_block.content.width);
+    let padding_bottom = get_length(styled.as_ref(), "padding-bottom", containing_block.content.width);
+    let border_top = get_length(styled.as_ref(), "border-top-width", containing_block.content.width);
+    let border_bottom = get_length(styled.as_ref(), "border-bottom-width", containing_block.content.width);
+    let margin_top = get_length(styled.as_ref(), "margin-top", containing_block.content.width);
+    let margin_bottom = get_length(styled.as_ref(), "margin-bottom", containing_block.content.width);
+
+    layout_box.dimensions.padding.left = padding_left;
+    layout_box.dimensions.padding.right = padding_right;
+    layout_box.dimensions.border.left = border_left;
+    layout_box.dimensions.border.right = border_right;
+    layout_box.dimensions.margin.left = margin_left;
+    layout_box.dimensions.margin.right = margin_right;
+    layout_box.dimensions.padding.top = padding_top;
+    layout_box.dimensions.padding.bottom = padding_bottom;
+    layout_box.dimensions.border.top = border_top;
+    layout_box.dimensions.border.bottom = border_bottom;
+    layout_box.dimensions.margin.top = margin_top;
+    layout_box.dimensions.margin.bottom = margin_bottom;
+
+    let font_size = styled.as_ref()
+        .and_then(|s| s.specified_values.get("font-size"))
+        .map(|v| parse_value(Some(v)))
+        .unwrap_or(16.0);
+    let line_height = font_size * 1.2;
+    let char_width = font_size * 0.5;
+
+    // Measure text content from styled node children
+    let mut text_width = 0.0f32;
+    let mut text_height = 0.0f32;
+    if let Some(s) = styled.as_ref() {
+        for child in &s.children {
+            if let Node::Text(text) = &child.node {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    let chars = trimmed.chars().count() as f32;
+                    text_width += chars * char_width;
+                    text_height = line_height;
+                }
+            }
+        }
+    }
+
+    // Recursively layout inline children (e.g. <span><a>...</a></span>)
+    let mut children_width = 0.0f32;
+    let mut children_height = 0.0f32;
+    for child in &mut layout_box.children {
+        let mut child_containing = Dimensions::default();
+        child_containing.content.width = containing_block.content.width;
+        layout_inline_node(child, &child_containing);
+        children_width += child.dimensions.content.width
+            + child.dimensions.padding.left + child.dimensions.padding.right
+            + child.dimensions.border.left + child.dimensions.border.right
+            + child.dimensions.margin.left + child.dimensions.margin.right;
+        children_height = children_height.max(
+            child.dimensions.content.height
+                + child.dimensions.padding.top + child.dimensions.padding.bottom
+                + child.dimensions.border.top + child.dimensions.border.bottom
+                + child.dimensions.margin.top + child.dimensions.margin.bottom,
+        );
+    }
+
+    layout_box.dimensions.content.width = text_width.max(children_width);
+    layout_box.dimensions.content.height = text_height.max(children_height);
 }
 
 fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {

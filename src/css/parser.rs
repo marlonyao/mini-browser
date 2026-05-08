@@ -324,12 +324,13 @@ mod tests {
     fn test_parse_multiple_declarations() {
         let sheet = parse_css("p { color: red; font-size: 16px; margin: 10px; }");
         assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(sheet.rules[0].declarations.len(), 3);
+        // margin shorthand expands to 4 directional declarations
+        assert_eq!(sheet.rules[0].declarations.len(), 6);
         assert_eq!(sheet.rules[0].declarations[0].property, "color");
         assert_eq!(sheet.rules[0].declarations[0].value, "red");
         assert_eq!(sheet.rules[0].declarations[1].property, "font-size");
         assert_eq!(sheet.rules[0].declarations[1].value, "16px");
-        assert_eq!(sheet.rules[0].declarations[2].property, "margin");
+        assert_eq!(sheet.rules[0].declarations[2].property, "margin-top");
         assert_eq!(sheet.rules[0].declarations[2].value, "10px");
     }
 

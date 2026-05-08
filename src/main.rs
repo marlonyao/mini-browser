@@ -274,9 +274,12 @@ fn fetch_and_render(url: &str) -> FetchResult {
         Ok(html) => {
             let dom = parse_html(&html);
 
-            // Extract inline stylesheets
+            // Extract stylesheets (inline + external)
             let mut stylesheet = Stylesheet { rules: Vec::new() };
-            collect_styles(&dom, &mut stylesheet);
+            collect_styles(&dom, &mut stylesheet, url);
+
+            // Merge UA default styles (lowest specificity)
+            mini_browser::style::merge_default_styles(&mut stylesheet);
 
             // Build styled tree
             let styled = style_tree(&dom, &stylesheet);
@@ -305,7 +308,7 @@ fn fetch_and_render(url: &str) -> FetchResult {
     }
 }
 
-fn collect_styles(node: &Node, stylesheet: &mut Stylesheet) {
+fn collect_styles(node: &Node, stylesheet: &mut Stylesheet, base_url: &str) {
     if let Node::Element(element) = node {
         if element.tag == "style" {
             let mut css_text = String::new();
@@ -316,9 +319,79 @@ fn collect_styles(node: &Node, stylesheet: &mut Stylesheet) {
             }
             let parsed = parse_css(&css_text);
             stylesheet.rules.extend(parsed.rules);
+        } else if element.tag == "link" {
+            if let Some(rel) = element.attrs.get("rel") {
+                if rel == "stylesheet" {
+                    if let Some(href) = element.attrs.get("href") {
+                        let absolute_url = resolve_url(base_url, href);
+                        match fetch_css(&absolute_url) {
+                            Ok(css_text) => {
+                                let parsed = parse_css(&css_text);
+                                stylesheet.rules.extend(parsed.rules);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to load stylesheet {}: {}", absolute_url, e);
+                            }
+                        }
+                    }
+                }
+            }
         }
         for child in &element.children {
-            collect_styles(child, stylesheet);
+            collect_styles(child, stylesheet, base_url);
         }
+    }
+}
+
+fn resolve_url(base: &str, href: &str) -> String {
+    if href.starts_with("http://") || href.starts_with("https://") || href.starts_with("file://") {
+        return href.to_string();
+    }
+    if href.starts_with("//") {
+        // Protocol-relative URL
+        if let Some(scheme_end) = base.find("://") {
+            let scheme = &base[..scheme_end];
+            return format!("{}:{}", scheme, href);
+        }
+        return format!("https:{}", href);
+    }
+    if href.starts_with('/') {
+        // Absolute path
+        match mini_browser::network::url::Url::parse(base) {
+            Ok(parsed) => {
+                return format!("{}://{}:{}{}", parsed.scheme, parsed.host, parsed.port, href);
+            }
+            Err(_) => return href.to_string(),
+        }
+    }
+    // Relative path
+    match mini_browser::network::url::Url::parse(base) {
+        Ok(parsed) => {
+            let mut path = parsed.path.clone();
+            // Ensure path ends with /
+            if !path.ends_with('/') {
+                if let Some(last_slash) = path.rfind('/') {
+                    path = path[..=last_slash].to_string();
+                } else {
+                    path.push('/');
+                }
+            }
+            return format!("{}://{}:{}{}{}", parsed.scheme, parsed.host, parsed.port, path, href);
+        }
+        Err(_) => return href.to_string(),
+    }
+}
+
+fn fetch_css(url: &str) -> Result<String, String> {
+    if url.starts_with("file://") {
+        let path = &url[7..];
+        std::fs::read_to_string(path).map_err(|e| e.to_string())
+    } else if url.starts_with("http://") || url.starts_with("https://") {
+        match mini_browser::network::url::Url::parse(url) {
+            Ok(parsed) => mini_browser::network::fetch(&parsed).map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    } else {
+        std::fs::read_to_string(url).map_err(|e| e.to_string())
     }
 }

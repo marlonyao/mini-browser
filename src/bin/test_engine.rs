@@ -5,7 +5,7 @@ use mini_browser::dom::Node;
 use mini_browser::layout::{build_layout_tree, layout, Dimensions, Rect};
 use mini_browser::paint::build_display_list;
 
-fn collect_styles(node: &Node, stylesheet: &mut Stylesheet) {
+fn collect_styles(node: &Node, stylesheet: &mut Stylesheet, base_url: &str) {
     if let Node::Element(element) = node {
         if element.tag == "style" {
             let mut css_text = String::new();
@@ -16,10 +16,47 @@ fn collect_styles(node: &Node, stylesheet: &mut Stylesheet) {
             }
             let parsed = parse_css(&css_text);
             stylesheet.rules.extend(parsed.rules);
+        } else if element.tag == "link" {
+            if let Some(rel) = element.attrs.get("rel") {
+                if rel == "stylesheet" {
+                    if let Some(href) = element.attrs.get("href") {
+                        let css_url = if href.starts_with('/') {
+                            format!("file://{}", href)
+                        } else if href.starts_with("file://") || href.starts_with("http://") || href.starts_with("https://") {
+                            href.clone()
+                        } else {
+                            format!("file://{}/{}", std::env::current_dir().unwrap_or_default().display(), href)
+                        };
+                        match fetch_css(&css_url) {
+                            Ok(css_text) => {
+                                let parsed = parse_css(&css_text);
+                                stylesheet.rules.extend(parsed.rules);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to load stylesheet {}: {}", css_url, e);
+                            }
+                        }
+                    }
+                }
+            }
         }
         for child in &element.children {
-            collect_styles(child, stylesheet);
+            collect_styles(child, stylesheet, base_url);
         }
+    }
+}
+
+fn fetch_css(url: &str) -> Result<String, String> {
+    if url.starts_with("file://") {
+        let path = &url[7..];
+        std::fs::read_to_string(path).map_err(|e| e.to_string())
+    } else if url.starts_with("http://") || url.starts_with("https://") {
+        match mini_browser::network::url::Url::parse(url) {
+            Ok(parsed) => mini_browser::network::fetch(&parsed).map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    } else {
+        std::fs::read_to_string(url).map_err(|e| e.to_string())
     }
 }
 
@@ -29,7 +66,10 @@ fn main() {
     let dom = parse_html(&html);
 
     let mut stylesheet = Stylesheet { rules: Vec::new() };
-    collect_styles(&dom, &mut stylesheet);
+    collect_styles(&dom, &mut stylesheet, &format!("file://{}", path));
+
+    // Merge UA default styles (lowest specificity)
+    mini_browser::style::merge_default_styles(&mut stylesheet);
 
     let styled = style_tree(&dom, &stylesheet);
     let mut layout_root = build_layout_tree(&styled);
