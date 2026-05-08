@@ -72,6 +72,7 @@ struct BrowserApp {
     // Shared state for background fetch
     fetch_result: Option<Arc<Mutex<Option<FetchResult>>>>,
     ctx_ref: Option<egui::Context>,
+    debug_info: String,
 }
 
 enum FetchResult {
@@ -99,10 +100,12 @@ impl eframe::App for BrowserApp {
                     self.loading = false;
                     match result {
                         FetchResult::Ok(page) => {
+                            self.debug_info = format!("display_list: {} items, content_height: {:.1}", page.display_list.len(), page.content_height);
                             self.page = Some(page);
                             self.error = None;
                         }
                         FetchResult::Err(e) => {
+                            self.debug_info = format!("error: {}", e);
                             self.error = Some(e);
                             self.page = None;
                         }
@@ -127,6 +130,9 @@ impl eframe::App for BrowserApp {
                     self.load_page();
                 }
             });
+            if !self.debug_info.is_empty() {
+                ui.label(egui::RichText::new(&self.debug_info).small().color(egui::Color32::GRAY));
+            }
         });
 
         // Main content area
