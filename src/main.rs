@@ -234,7 +234,7 @@ impl BrowserApp {
                                 egui_color,
                             );
                         }
-                        DisplayCommand::Border(cmd_rect, _bw, color) => {
+                        DisplayCommand::Border(cmd_rect, bw, color) => {
                             let egui_rect = egui::Rect::from_min_max(
                                 egui::pos2(origin.x + cmd_rect.x, origin.y + cmd_rect.y),
                                 egui::pos2(
@@ -247,7 +247,33 @@ impl BrowserApp {
                                 (color.g * 255.0) as u8,
                                 (color.b * 255.0) as u8,
                             );
-                            painter.rect_stroke(egui_rect, 0.0, egui::Stroke::new(2.0, egui_color), egui::StrokeKind::Outside);
+                            painter.rect_stroke(egui_rect, 0.0, egui::Stroke::new(*bw, egui_color), egui::StrokeKind::Outside);
+                        }
+                        DisplayCommand::Image(_url, cmd_rect, alt) => {
+                            // Placeholder: gray background + alt text + border
+                            let egui_rect = egui::Rect::from_min_max(
+                                egui::pos2(origin.x + cmd_rect.x, origin.y + cmd_rect.y),
+                                egui::pos2(
+                                    origin.x + cmd_rect.x + cmd_rect.width,
+                                    origin.y + cmd_rect.y + cmd_rect.height,
+                                ),
+                            );
+                            let gray = egui::Color32::from_rgb(220, 220, 220);
+                            let dark_gray = egui::Color32::from_rgb(150, 150, 150);
+                            painter.rect_filled(egui_rect, 0.0, gray);
+                            painter.rect_stroke(egui_rect, 0.0, egui::Stroke::new(1.0, dark_gray), egui::StrokeKind::Inside);
+                            if let Some(alt_text) = alt {
+                                if !alt_text.is_empty() {
+                                    let center = egui_rect.center();
+                                    painter.text(
+                                        center,
+                                        egui::Align2::CENTER_CENTER,
+                                        alt_text,
+                                        egui::FontId::proportional(12.0),
+                                        dark_gray,
+                                    );
+                                }
+                            }
                         }
                     }
                 }
@@ -297,7 +323,7 @@ fn fetch_and_render(url: &str) -> FetchResult {
 
             // Calculate total content height
             let content_height = display_list.iter().map(|cmd| match cmd {
-                DisplayCommand::SolidColor(rect, _) | DisplayCommand::Text(_, rect, _) | DisplayCommand::Border(rect, _, _) => {
+                DisplayCommand::SolidColor(rect, _) | DisplayCommand::Text(_, rect, _) | DisplayCommand::Border(rect, _, _) | DisplayCommand::Image(_, rect, _) => {
                     rect.y + rect.height
                 }
             }).fold(0.0f32, f32::max);

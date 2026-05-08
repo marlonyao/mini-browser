@@ -23,6 +23,8 @@ pub enum DisplayCommand {
     SolidColor(Rect, Color),
     Text(String, Rect, Color),
     Border(Rect, f32, Color),
+    /// Image placeholder: (url_or_src, rect, alt_text)
+    Image(String, Rect, Option<String>),
 }
 
 pub fn parse_color(value: &str) -> Option<Color> {
@@ -162,7 +164,7 @@ fn build_display_list_inner(
         build_display_list_inner(child, list, &child_clip);
     }
 
-    // 4. Text
+    // 4. Text (with line wrapping based on container width)
     if let Some(styled) = styled {
         let color = styled.specified_values.get("color")
             .and_then(|v| parse_color(v))
@@ -170,22 +172,120 @@ fn build_display_list_inner(
 
         let font_size = parse_value(styled.specified_values.get("font-size")).max(16.0);
         let line_height = font_size * 1.2;
+        let char_width = font_size * 0.5;
 
         let mut text_y = dim.content.y;
+        let container_width = dim.content.width;
+
+        // Word-wrap: split text into lines that fit within container_width
         for child in &styled.children {
             if let Node::Text(text) = &child.node {
                 let trimmed = text.trim();
-                if !trimmed.is_empty() {
-                    let text_rect = Rect {
-                        x: dim.content.x,
-                        y: text_y,
-                        width: dim.content.width,
-                        height: line_height,
-                    };
-                    if let Some(clipped) = rect_intersect(&text_rect, clip) {
-                        list.push(DisplayCommand::Text(trimmed.to_string(), clipped, color.clone()));
+                if trimmed.is_empty() { continue; }
+
+                let chars_per_line = if container_width > 0.0 && char_width > 0.0 {
+                    (container_width / char_width).floor().max(1.0) as usize
+                } else {
+                    trimmed.chars().count()
+                };
+
+                let mut line_start = 0usize;
+                let text_len = trimmed.chars().count();
+
+                while line_start < text_len {
+                    let line_end = (line_start + chars_per_line).min(text_len);
+                    // Try to break at word boundary (space) if possible
+                    let mut actual_end = line_end;
+                    if actual_end < text_len {
+                        // Look backward for a space to break at
+                        let slice: String = trimmed.chars().skip(line_start).take(line_end - line_start).collect();
+                        if let Some(last_space) = slice.rfind(' ') {
+                            actual_end = line_start + last_space;
+                        }
                     }
-                    text_y += line_height;
+
+                    let line_text: String = trimmed.chars().skip(line_start).take(actual_end - line_start).collect();
+                    let trimmed_line = line_text.trim();
+                    if !trimmed_line.is_empty() {
+                        let line_width = trimmed_line.chars().count() as f32 * char_width;
+                        let text_rect = Rect {
+                            x: dim.content.x,
+                            y: text_y,
+                            width: line_width,
+                            height: line_height,
+                        };
+                        if let Some(clipped) = rect_intersect(&text_rect, clip) {
+                            list.push(DisplayCommand::Text(trimmed_line.to_string(), clipped, color.clone()));
+                        }
+                        text_y += line_height;
+                    }
+
+                    line_start = actual_end;
+                    // Skip leading space on next line
+                    while line_start < text_len {
+                        let ch = trimmed.chars().nth(line_start);
+                        if ch == Some(' ') { line_start += 1; } else { break; }
+                    }
+                }
+            }
+        }
+
+        // 5. Link underline (drawn under the last line of text)
+        if let Node::Element(el) = &styled.node {
+            if el.tag == "a" && text_y > dim.content.y {
+                let underline_rect = Rect {
+                    x: dim.content.x,
+                    y: text_y - 1.0,
+                    width: dim.content.width,
+                    height: 1.0,
+                };
+                if let Some(clipped) = rect_intersect(&underline_rect, clip) {
+                    list.push(DisplayCommand::Border(clipped, 1.0, color));
+                }
+            }
+            // 6. Input placeholder
+            if el.tag == "input" {
+                let value = el.attrs.get("value")
+                    .or_else(|| el.attrs.get("placeholder"))
+                    .cloned()
+                    .unwrap_or_default();
+                let input_rect = Rect {
+                    x: dim.content.x,
+                    y: dim.content.y,
+                    width: dim.content.width,
+                    height: dim.content.height,
+                };
+                if let Some(clipped) = rect_intersect(&input_rect, clip) {
+                    // White background
+                    list.push(DisplayCommand::SolidColor(clipped.clone(), Color::new(1.0, 1.0, 1.0, 1.0)));
+                    // Gray border
+                    list.push(DisplayCommand::Border(clipped.clone(), 1.0, Color::new(0.7, 0.7, 0.7, 1.0)));
+                    // Text inside
+                    if !value.is_empty() {
+                        let text_rect = Rect {
+                            x: dim.content.x + 4.0,
+                            y: dim.content.y + 2.0,
+                            width: dim.content.width - 8.0,
+                            height: dim.content.height - 4.0,
+                        };
+                        if let Some(clipped_text) = rect_intersect(&text_rect, clip) {
+                            list.push(DisplayCommand::Text(value, clipped_text, Color::black()));
+                        }
+                    }
+                }
+            }
+            // 7. Image placeholder
+            if el.tag == "img" {
+                let alt = el.attrs.get("alt").cloned();
+                let img_rect = Rect {
+                    x: dim.content.x,
+                    y: dim.content.y,
+                    width: dim.content.width,
+                    height: dim.content.height,
+                };
+                if let Some(clipped) = rect_intersect(&img_rect, clip) {
+                    let src = el.attrs.get("src").cloned().unwrap_or_default();
+                    list.push(DisplayCommand::Image(src, clipped, alt));
                 }
             }
         }

@@ -243,6 +243,38 @@ fn layout_inline_node(layout_box: &mut LayoutBox, containing_block: &Dimensions)
 
     layout_box.dimensions.content.width = text_width.max(children_width);
     layout_box.dimensions.content.height = text_height.max(children_height);
+
+    // Special: <img> placeholder sizing
+    if let Some(s) = styled.as_ref() {
+        if let Node::Element(el) = &s.node {
+            if el.tag == "img" {
+                let mut img_w = 100.0f32;
+                let mut img_h = 100.0f32;
+                if let Some(w) = el.attrs.get("width") {
+                    if let Ok(v) = w.parse::<f32>() { img_w = v; }
+                }
+                if let Some(h) = el.attrs.get("height") {
+                    if let Ok(v) = h.parse::<f32>() { img_h = v; }
+                }
+                layout_box.dimensions.content.width = img_w;
+                layout_box.dimensions.content.height = img_h;
+            } else if el.tag == "input" {
+                let mut input_w = 200.0f32;
+                let mut input_h = 30.0f32;
+                if let Some(w) = el.attrs.get("width") {
+                    if let Ok(v) = w.parse::<f32>() { input_w = v; }
+                }
+                if let Some(h) = el.attrs.get("height") {
+                    if let Ok(v) = h.parse::<f32>() { input_h = v; }
+                }
+                if let Some(size) = el.attrs.get("size") {
+                    if let Ok(v) = size.parse::<f32>() { input_w = v * 10.0; }
+                }
+                layout_box.dimensions.content.width = input_w;
+                layout_box.dimensions.content.height = input_h;
+            }
+        }
+    }
 }
 
 fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
