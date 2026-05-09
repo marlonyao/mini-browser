@@ -105,7 +105,7 @@ fn build_display_list_inner(
     let styled = match &layout_box.box_type {
         BoxType::BlockNode(s) | BoxType::InlineNode(s) | BoxType::InlineBlockNode(s)
         | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s)
-        | BoxType::AbsoluteNode(s) | BoxType::FlexNode(s) => Some(s),
+        | BoxType::AbsoluteNode(s) | BoxType::FixedNode(s) | BoxType::FlexNode(s) => Some(s),
         BoxType::AnonymousBlock => None,
     };
 

@@ -81,6 +81,7 @@ pub enum BoxType {
     FloatLeftNode(StyledNode),   // 新增
     FloatRightNode(StyledNode),  // 新增
     AbsoluteNode(StyledNode),    // 新增
+    FixedNode(StyledNode),       // 新增
     FlexNode(StyledNode),        // 新增
 }
 
@@ -109,6 +110,7 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
             let float = styled.specified_values.get("float").map(|s| s.as_str());
             let position = styled.specified_values.get("position").map(|s| s.as_str());
             match position {
+                Some("fixed") => BoxType::FixedNode(styled.clone()),
                 Some("absolute") => BoxType::AbsoluteNode(styled.clone()),
                 _ => match float {
                     Some("left") => BoxType::FloatLeftNode(styled.clone()),
@@ -189,10 +191,10 @@ pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
         BoxType::FloatLeftNode(_) | BoxType::FloatRightNode(_) => {
             layout_float(layout_box, &containing_block.content, &mut FloatContext::default());
         }
-        BoxType::AbsoluteNode(_) => {
-            // Absolute elements are laid out by their containing block after
+        BoxType::AbsoluteNode(_) | BoxType::FixedNode(_) => {
+            // Absolute/fixed elements are laid out by their containing block after
             // normal flow is complete.  When layout() is called directly on
-            // an absolute box (e.g. top-level), treat it as a normal block.
+            // an absolute/fixed box (e.g. top-level), treat it as a normal block.
             layout_block(layout_box, &containing_block);
         }
     }
@@ -203,7 +205,7 @@ fn apply_relative_offset(layout_box: &mut LayoutBox, containing_block: &Dimensio
     let styled = match &layout_box.box_type {
         BoxType::BlockNode(s) | BoxType::InlineNode(s) | BoxType::InlineBlockNode(s)
         | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s)
-        | BoxType::AbsoluteNode(s) | BoxType::FlexNode(s) => Some(s.clone()),
+        | BoxType::AbsoluteNode(s) | BoxType::FixedNode(s) | BoxType::FlexNode(s) => Some(s.clone()),
         BoxType::AnonymousBlock => None,
     };
 
@@ -531,6 +533,7 @@ fn compute_vertical_margins(layout_box: &LayoutBox, container_width: f32) -> (f3
         | BoxType::FloatLeftNode(styled)
         | BoxType::FloatRightNode(styled)
         | BoxType::AbsoluteNode(styled)
+        | BoxType::FixedNode(styled)
         | BoxType::FlexNode(styled) => {
             let top = get_length(Some(styled), "margin-top", container_width);
             let bottom = get_length(Some(styled), "margin-bottom", container_width);
@@ -540,11 +543,19 @@ fn compute_vertical_margins(layout_box: &LayoutBox, container_width: f32) -> (f3
     }
 }
 
+/// Return the initial containing block (viewport) dimensions.
+fn initial_containing_block() -> Dimensions {
+    let mut d = Dimensions::default();
+    d.content.width = 800.0;
+    d.content.height = 600.0;
+    d
+}
+
 fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     let styled = match &layout_box.box_type {
         BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s)
         | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s)
-        | BoxType::AbsoluteNode(s) | BoxType::FlexNode(s) => Some(s.clone()),
+        | BoxType::AbsoluteNode(s) | BoxType::FixedNode(s) | BoxType::FlexNode(s) => Some(s.clone()),
         BoxType::AnonymousBlock => None,
     };
 
@@ -626,7 +637,7 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
 
     for child in &mut layout_box.children {
         if matches!(child.box_type, BoxType::FloatLeftNode(_) | BoxType::FloatRightNode(_)
-            | BoxType::AbsoluteNode(_) | BoxType::FlexNode(_)) {
+            | BoxType::AbsoluteNode(_) | BoxType::FixedNode(_) | BoxType::FlexNode(_)) {
             continue;
         }
 
@@ -673,17 +684,13 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
         last_margin_bottom = child_margin_bottom;
     }
 
-    // Round 3: layout absolute children after normal flow is complete
+    // Round 3: layout absolute/fixed children after normal flow is complete
     for child in &mut layout_box.children {
         if matches!(child.box_type, BoxType::AbsoluteNode(_)) {
             layout_absolute(child, &layout_box.dimensions);
-        }
-    }
-
-    // Round 3: layout absolute children after normal flow is complete
-    for child in &mut layout_box.children {
-        if matches!(child.box_type, BoxType::AbsoluteNode(_)) {
-            layout_absolute(child, &layout_box.dimensions);
+        } else if matches!(child.box_type, BoxType::FixedNode(_)) {
+            // Fixed elements use the viewport (initial containing block)
+            layout_absolute(child, &initial_containing_block());
         }
     }
 
@@ -871,7 +878,7 @@ fn layout_float(layout_box: &mut LayoutBox, container: &Rect, float_context: &mu
 /// its containing block (simplified: the parent padding box).
 fn layout_absolute(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     let styled = match &layout_box.box_type {
-        BoxType::AbsoluteNode(s) => Some(s.clone()),
+        BoxType::AbsoluteNode(s) | BoxType::FixedNode(s) => Some(s.clone()),
         _ => return,
     };
 
@@ -1363,7 +1370,7 @@ pub fn print_layout_box(layout_box: &LayoutBox, indent: usize) {
     match &layout_box.box_type {
         BoxType::BlockNode(styled) | BoxType::InlineNode(styled) | BoxType::InlineBlockNode(styled)
         | BoxType::FloatLeftNode(styled) | BoxType::FloatRightNode(styled)
-        | BoxType::AbsoluteNode(styled) | BoxType::FlexNode(styled) => {
+        | BoxType::AbsoluteNode(styled) | BoxType::FixedNode(styled) | BoxType::FlexNode(styled) => {
             if let Node::Element(el) = &styled.node {
                 println!(
                     "{}<{}> x={:.0} y={:.0} w={:.0} h={:.0}",
@@ -2019,5 +2026,56 @@ mod tests {
         let child = &root.children[0];
         // Center vertically in 200px container with 50px child => y = (200-50)/2 = 75
         assert_eq!(child.dimensions.content.y, 75.0);
+    }
+
+    // ── Fixed position tests ───────────────────────────
+
+    #[test]
+    fn test_position_fixed_basic() {
+        let mut child_styles = HashMap::new();
+        child_styles.insert("position".to_string(), "fixed".to_string());
+        child_styles.insert("top".to_string(), "10px".to_string());
+        child_styles.insert("left".to_string(), "20px".to_string());
+        child_styles.insert("width".to_string(), "100px".to_string());
+        child_styles.insert("height".to_string(), "50px".to_string());
+        let child = styled_element("div", child_styles, vec![]);
+
+        let parent = styled_element("div", HashMap::new(), vec![child]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child_box = &root.children[0];
+        assert!(matches!(child_box.box_type, BoxType::FixedNode(_)));
+        // Fixed elements are positioned relative to the viewport
+        assert_eq!(child_box.dimensions.content.x, 20.0);
+        assert_eq!(child_box.dimensions.content.y, 10.0);
+    }
+
+    #[test]
+    fn test_position_fixed_out_of_flow() {
+        // Fixed element should not affect sibling layout
+        let mut fixed_styles = HashMap::new();
+        fixed_styles.insert("position".to_string(), "fixed".to_string());
+        fixed_styles.insert("top".to_string(), "0px".to_string());
+        fixed_styles.insert("left".to_string(), "0px".to_string());
+        fixed_styles.insert("width".to_string(), "100px".to_string());
+        fixed_styles.insert("height".to_string(), "100px".to_string());
+        let fixed_box = styled_element("div", fixed_styles, vec![]);
+
+        let mut sibling_styles = HashMap::new();
+        sibling_styles.insert("width".to_string(), "200px".to_string());
+        sibling_styles.insert("height".to_string(), "50px".to_string());
+        let sibling = styled_element("div", sibling_styles, vec![]);
+
+        let parent = styled_element("div", HashMap::new(), vec![fixed_box, sibling]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let fixed_child = &root.children[0];
+        let sibling_child = &root.children[1];
+
+        assert!(matches!(fixed_child.box_type, BoxType::FixedNode(_)));
+        // Sibling should start at y=0 (fixed removed from flow)
+        assert_eq!(sibling_child.dimensions.content.y, 0.0);
     }
 }
