@@ -80,6 +80,7 @@ pub enum BoxType {
     AnonymousBlock,
     FloatLeftNode(StyledNode),   // 新增
     FloatRightNode(StyledNode),  // 新增
+    AbsoluteNode(StyledNode),    // 新增
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -105,13 +106,17 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
         Node::Element(_) => {
             let display = styled.specified_values.get("display").map(|s| s.as_str());
             let float = styled.specified_values.get("float").map(|s| s.as_str());
-            match float {
-                Some("left") => BoxType::FloatLeftNode(styled.clone()),
-                Some("right") => BoxType::FloatRightNode(styled.clone()),
-                _ => match display {
-                    Some("inline") => BoxType::InlineNode(styled.clone()),
-                    Some("inline-block") => BoxType::InlineBlockNode(styled.clone()),
-                    _ => BoxType::BlockNode(styled.clone()),
+            let position = styled.specified_values.get("position").map(|s| s.as_str());
+            match position {
+                Some("absolute") => BoxType::AbsoluteNode(styled.clone()),
+                _ => match float {
+                    Some("left") => BoxType::FloatLeftNode(styled.clone()),
+                    Some("right") => BoxType::FloatRightNode(styled.clone()),
+                    _ => match display {
+                        Some("inline") => BoxType::InlineNode(styled.clone()),
+                        Some("inline-block") => BoxType::InlineBlockNode(styled.clone()),
+                        _ => BoxType::BlockNode(styled.clone()),
+                    },
                 },
             }
         }
@@ -177,10 +182,13 @@ pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
             layout_inline_node(layout_box, &containing_block);
         }
         BoxType::FloatLeftNode(_) | BoxType::FloatRightNode(_) => {
-            // Float boxes are laid out by their parent block container.
-            // When layout() is called directly on a float (e.g. top-level),
-            // treat it like a normal block for sizing.
             layout_float(layout_box, &containing_block.content, &mut FloatContext::default());
+        }
+        BoxType::AbsoluteNode(_) => {
+            // Absolute elements are laid out by their containing block after
+            // normal flow is complete.  When layout() is called directly on
+            // an absolute box (e.g. top-level), treat it as a normal block.
+            layout_block(layout_box, &containing_block);
         }
     }
     apply_relative_offset(layout_box, &containing_block);
@@ -189,7 +197,8 @@ pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
 fn apply_relative_offset(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     let styled = match &layout_box.box_type {
         BoxType::BlockNode(s) | BoxType::InlineNode(s) | BoxType::InlineBlockNode(s)
-        | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s) => Some(s.clone()),
+        | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s)
+        | BoxType::AbsoluteNode(s) => Some(s.clone()),
         BoxType::AnonymousBlock => None,
     };
 
@@ -515,7 +524,8 @@ fn compute_vertical_margins(layout_box: &LayoutBox, container_width: f32) -> (f3
         | BoxType::InlineNode(styled)
         | BoxType::InlineBlockNode(styled)
         | BoxType::FloatLeftNode(styled)
-        | BoxType::FloatRightNode(styled) => {
+        | BoxType::FloatRightNode(styled)
+        | BoxType::AbsoluteNode(styled) => {
             let top = get_length(Some(styled), "margin-top", container_width);
             let bottom = get_length(Some(styled), "margin-bottom", container_width);
             (top, bottom)
@@ -527,7 +537,8 @@ fn compute_vertical_margins(layout_box: &LayoutBox, container_width: f32) -> (f3
 fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     let styled = match &layout_box.box_type {
         BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s)
-        | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s) => Some(s.clone()),
+        | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s)
+        | BoxType::AbsoluteNode(s) => Some(s.clone()),
         BoxType::AnonymousBlock => None,
     };
 
@@ -603,12 +614,13 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
         }
     }
 
-    // Round 2: layout non-float children, passing float context to inline blocks
+    // Round 2: layout non-float, non-absolute children
     let mut last_border_bottom = layout_box.dimensions.content.y;
     let mut last_margin_bottom = 0.0f32;
 
     for child in &mut layout_box.children {
-        if matches!(child.box_type, BoxType::FloatLeftNode(_) | BoxType::FloatRightNode(_)) {
+        if matches!(child.box_type, BoxType::FloatLeftNode(_) | BoxType::FloatRightNode(_)
+            | BoxType::AbsoluteNode(_)) {
             continue;
         }
 
@@ -653,6 +665,20 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
             + child.dimensions.padding.bottom
             + child.dimensions.border.bottom;
         last_margin_bottom = child_margin_bottom;
+    }
+
+    // Round 3: layout absolute children after normal flow is complete
+    for child in &mut layout_box.children {
+        if matches!(child.box_type, BoxType::AbsoluteNode(_)) {
+            layout_absolute(child, &layout_box.dimensions);
+        }
+    }
+
+    // Round 3: layout absolute children after normal flow is complete
+    for child in &mut layout_box.children {
+        if matches!(child.box_type, BoxType::AbsoluteNode(_)) {
+            layout_absolute(child, &layout_box.dimensions);
+        }
     }
 
     // ── Height calculation ─────────────────────────────
@@ -704,6 +730,13 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     };
 
     layout_box.dimensions.content.height = final_height;
+
+    // Round 3: layout absolute children after normal flow is complete
+    for child in &mut layout_box.children {
+        if matches!(child.box_type, BoxType::AbsoluteNode(_)) {
+            layout_absolute(child, &layout_box.dimensions);
+        }
+    }
 }
 
 /// Layout a floated box.  Computes size, finds a free horizontal band
@@ -827,6 +860,149 @@ fn layout_float(layout_box: &mut LayoutBox, container: &Rect, float_context: &mu
     };
 }
 
+/// Layout an absolutely-positioned box.
+/// The element is removed from normal flow and positioned relative to
+/// its containing block (simplified: the parent padding box).
+fn layout_absolute(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
+    let styled = match &layout_box.box_type {
+        BoxType::AbsoluteNode(s) => Some(s.clone()),
+        _ => return,
+    };
+
+    let cb_width = containing_block.content.width
+        + containing_block.padding.left + containing_block.padding.right
+        + containing_block.border.left + containing_block.border.right;
+    let cb_height = containing_block.content.height
+        + containing_block.padding.top + containing_block.padding.bottom
+        + containing_block.border.top + containing_block.border.bottom;
+    let cb_x = containing_block.content.x
+        - containing_block.padding.left - containing_block.border.left;
+    let cb_y = containing_block.content.y
+        - containing_block.padding.top - containing_block.border.top;
+
+    let box_sizing = get_box_sizing(styled.as_ref());
+
+    // ── Horizontal metrics ──
+    let margin_left = get_length(styled.as_ref(), "margin-left", cb_width);
+    let margin_right = get_length(styled.as_ref(), "margin-right", cb_width);
+    let padding_left = get_length(styled.as_ref(), "padding-left", cb_width);
+    let padding_right = get_length(styled.as_ref(), "padding-right", cb_width);
+    let border_left = get_length(styled.as_ref(), "border-left", cb_width);
+    let border_right = get_length(styled.as_ref(), "border-right", cb_width);
+
+    let total_horizontal = margin_left + border_left + padding_left + padding_right + border_right + margin_right;
+
+    let explicit_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("width"))
+        .map(|v| parse_length_percent(v, cb_width));
+
+    let left = get_length(styled.as_ref(), "left", cb_width);
+    let right = get_length(styled.as_ref(), "right", cb_width);
+
+    let mut content_width = match (explicit_width, box_sizing) {
+        (Some(w), "border-box") => (w - border_left - padding_left - padding_right - border_right).max(0.0),
+        (Some(w), _) => w,
+        (None, _) => {
+            if left != 0.0 && right != 0.0 {
+                (cb_width - left - right - total_horizontal).max(0.0)
+            } else {
+                (cb_width - total_horizontal).max(0.0)
+            }
+        },
+    };
+
+    let min_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("min-width"))
+        .map(|v| parse_length_percent(v, cb_width))
+        .unwrap_or(0.0);
+    let max_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("max-width"))
+        .map(|v| parse_length_percent(v, cb_width))
+        .unwrap_or(f32::INFINITY);
+    content_width = content_width.clamp(min_width, max_width);
+
+    // ── Vertical metrics ──
+    let margin_top = get_length(styled.as_ref(), "margin-top", cb_width);
+    let margin_bottom = get_length(styled.as_ref(), "margin-bottom", cb_width);
+    let padding_top = get_length(styled.as_ref(), "padding-top", cb_width);
+    let padding_bottom = get_length(styled.as_ref(), "padding-bottom", cb_width);
+    let border_top = get_length(styled.as_ref(), "border-top", cb_width);
+    let border_bottom = get_length(styled.as_ref(), "border-bottom", cb_width);
+
+    let total_vertical = margin_top + border_top + padding_top + padding_bottom + border_bottom + margin_bottom;
+
+    let explicit_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("height"))
+        .map(|v| parse_length_percent(v, cb_height));
+
+    let top = get_length(styled.as_ref(), "top", cb_height);
+    let bottom = get_length(styled.as_ref(), "bottom", cb_height);
+
+    let mut content_height = match (explicit_height, box_sizing) {
+        (Some(h), "border-box") => (h - border_top - padding_top - padding_bottom - border_bottom).max(0.0),
+        (Some(h), _) => h,
+        (None, _) => {
+            if top != 0.0 && bottom != 0.0 {
+                (cb_height - top - bottom - total_vertical).max(0.0)
+            } else {
+                0.0 // will be resolved after internal layout
+            }
+        },
+    };
+
+    let min_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("min-height"))
+        .map(|v| parse_length_percent(v, cb_height))
+        .unwrap_or(0.0);
+    let max_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("max-height"))
+        .map(|v| parse_length_percent(v, cb_height))
+        .unwrap_or(f32::INFINITY);
+    content_height = content_height.clamp(min_height, max_height);
+
+    // ── Position ──
+    let mut content_x = cb_x + margin_left + border_left + padding_left;
+    if left != 0.0 {
+        content_x = cb_x + left + margin_left + border_left + padding_left;
+    } else if right != 0.0 && explicit_width.is_some() {
+        content_x = cb_x + cb_width - right - margin_right - border_right - padding_right - content_width;
+    }
+
+    let mut content_y = cb_y + margin_top + border_top + padding_top;
+    if top != 0.0 {
+        content_y = cb_y + top + margin_top + border_top + padding_top;
+    } else if bottom != 0.0 && explicit_height.is_some() {
+        content_y = cb_y + cb_height - bottom - margin_bottom - border_bottom - padding_bottom - content_height;
+    }
+
+    // ── Internal layout ──
+    let mut inner = Dimensions::default();
+    inner.content.x = content_x;
+    inner.content.y = content_y;
+    inner.content.width = content_width;
+    layout_block(layout_box, &inner);
+
+    let final_height = if content_height <= 0.0 {
+        layout_box.dimensions.content.height.clamp(min_height, max_height)
+    } else {
+        content_height
+    };
+
+    layout_box.dimensions.content.x = content_x;
+    layout_box.dimensions.content.y = content_y;
+    layout_box.dimensions.content.width = content_width;
+    layout_box.dimensions.content.height = final_height;
+    layout_box.dimensions.margin = EdgeSizes {
+        top: margin_top, right: margin_right, bottom: margin_bottom, left: margin_left,
+    };
+    layout_box.dimensions.padding = EdgeSizes {
+        top: padding_top, right: padding_right, bottom: padding_bottom, left: padding_left,
+    };
+    layout_box.dimensions.border = EdgeSizes {
+        top: border_top, right: border_right, bottom: border_bottom, left: border_left,
+    };
+}
+
 /// Estimate text height based on character count and container width
 fn measure_text_height(styled: &StyledNode, container_width: f32) -> f32 {
     let font_size = 16.0f32;
@@ -894,7 +1070,8 @@ pub fn print_layout_box(layout_box: &LayoutBox, indent: usize) {
 
     match &layout_box.box_type {
         BoxType::BlockNode(styled) | BoxType::InlineNode(styled) | BoxType::InlineBlockNode(styled)
-        | BoxType::FloatLeftNode(styled) | BoxType::FloatRightNode(styled) => {
+        | BoxType::FloatLeftNode(styled) | BoxType::FloatRightNode(styled)
+        | BoxType::AbsoluteNode(styled) => {
             if let Node::Element(el) = &styled.node {
                 println!(
                     "{}<{}> x={:.0} y={:.0} w={:.0} h={:.0}",
@@ -1342,28 +1519,78 @@ mod tests {
     }
 
     #[test]
-    fn test_position_relative_children_move() {
-        let mut grandchild_styles = HashMap::new();
-        grandchild_styles.insert("width".to_string(), "50px".to_string());
-        grandchild_styles.insert("height".to_string(), "25px".to_string());
-        let grandchild = styled_element("span", grandchild_styles, vec![]);
-
+    fn test_position_absolute_basic() {
         let mut child_styles = HashMap::new();
-        child_styles.insert("position".to_string(), "relative".to_string());
-        child_styles.insert("left".to_string(), "20px".to_string());
-        child_styles.insert("top".to_string(), "10px".to_string());
-        let child = styled_element("div", child_styles, vec![grandchild]);
+        child_styles.insert("position".to_string(), "absolute".to_string());
+        child_styles.insert("top".to_string(), "30px".to_string());
+        child_styles.insert("left".to_string(), "40px".to_string());
+        child_styles.insert("width".to_string(), "100px".to_string());
+        child_styles.insert("height".to_string(), "50px".to_string());
+        let child = styled_element("div", child_styles, vec![]);
 
         let parent = styled_element("div", HashMap::new(), vec![child]);
         let mut root = build_layout_tree(&parent);
         layout(&mut root, viewport());
 
         let child_box = &root.children[0];
-        let grandchild_box = &child_box.children[0];
+        assert!(matches!(child_box.box_type, BoxType::AbsoluteNode(_)));
+        assert_eq!(child_box.dimensions.content.x, 40.0);
+        assert_eq!(child_box.dimensions.content.y, 30.0);
+        assert_eq!(child_box.dimensions.content.width, 100.0);
+        assert_eq!(child_box.dimensions.content.height, 50.0);
+    }
 
-        assert_eq!(child_box.dimensions.content.x, 20.0);
-        assert_eq!(child_box.dimensions.content.y, 10.0);
-        assert_eq!(grandchild_box.dimensions.content.x, 20.0);
-        assert_eq!(grandchild_box.dimensions.content.y, 10.0);
+    #[test]
+    fn test_position_absolute_out_of_flow() {
+        // Absolute element should not affect sibling layout
+        let mut abs_styles = HashMap::new();
+        abs_styles.insert("position".to_string(), "absolute".to_string());
+        abs_styles.insert("top".to_string(), "10px".to_string());
+        abs_styles.insert("left".to_string(), "10px".to_string());
+        abs_styles.insert("width".to_string(), "100px".to_string());
+        abs_styles.insert("height".to_string(), "100px".to_string());
+        let abs_box = styled_element("div", abs_styles, vec![]);
+
+        let mut sibling_styles = HashMap::new();
+        sibling_styles.insert("width".to_string(), "200px".to_string());
+        sibling_styles.insert("height".to_string(), "50px".to_string());
+        let sibling = styled_element("div", sibling_styles, vec![]);
+
+        let parent = styled_element("div", HashMap::new(), vec![abs_box, sibling]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let abs_child = &root.children[0];
+        let sibling_child = &root.children[1];
+
+        assert!(matches!(abs_child.box_type, BoxType::AbsoluteNode(_)));
+        // Sibling should start at y=0 (absolute removed from flow)
+        assert_eq!(sibling_child.dimensions.content.y, 0.0);
+        assert_eq!(sibling_child.dimensions.content.x, 0.0);
+    }
+
+    #[test]
+    fn test_position_absolute_right_bottom() {
+        // Give parent explicit height so bottom positioning has room
+        let mut parent_styles = HashMap::new();
+        parent_styles.insert("height".to_string(), "500px".to_string());
+
+        let mut child_styles = HashMap::new();
+        child_styles.insert("position".to_string(), "absolute".to_string());
+        child_styles.insert("bottom".to_string(), "20px".to_string());
+        child_styles.insert("right".to_string(), "30px".to_string());
+        child_styles.insert("width".to_string(), "100px".to_string());
+        child_styles.insert("height".to_string(), "50px".to_string());
+        let child = styled_element("div", child_styles, vec![]);
+
+        let parent = styled_element("div", parent_styles, vec![child]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child_box = &root.children[0];
+        // Parent content width = 800, right=30, width=100 => x = 800 - 30 - 100 = 670
+        assert_eq!(child_box.dimensions.content.x, 670.0);
+        // Parent content height = 500, bottom=20, height=50 => y = 500 - 20 - 50 = 430
+        assert_eq!(child_box.dimensions.content.y, 430.0);
     }
 }
