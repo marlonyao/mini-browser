@@ -1,7 +1,8 @@
 use crate::dom::Node;
 use crate::style::StyledNode;
+use serde::Serialize;
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,
@@ -29,6 +30,7 @@ pub struct Dimensions {
 pub enum BoxType {
     BlockNode(StyledNode),
     InlineNode(StyledNode),
+    InlineBlockNode(StyledNode),  // 新增
     AnonymousBlock,
 }
 
@@ -56,6 +58,7 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
             let display = styled.specified_values.get("display").map(|s| s.as_str());
             match display {
                 Some("inline") => BoxType::InlineNode(styled.clone()),
+                Some("inline-block") => BoxType::InlineBlockNode(styled.clone()),  // 新增
                 _ => BoxType::BlockNode(styled.clone()),
             }
         }
@@ -65,11 +68,15 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
     let mut inline_boxes: Vec<LayoutBox> = Vec::new();
 
     for child in &styled.children {
-        if let Node::Text(_) = &child.node {
+        if matches!(child.node, Node::Text(_)) {
             continue;
         }
         if let Node::Element(el) = &child.node {
             if matches!(el.tag.as_str(), "head" | "style" | "script" | "meta" | "link" | "title") {
+                continue;
+            }
+            // Hardcode: skip <input type="hidden"> since attribute selectors aren't supported
+            if el.tag == "input" && el.attrs.get("type").map(|s| s.as_str()) == Some("hidden") {
                 continue;
             }
         }
@@ -78,7 +85,7 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
         if child_display == Some("none") {
             continue;
         }
-        let is_inline = child_display == Some("inline");
+        let is_inline = child_display == Some("inline") || child_display == Some("inline-block");
 
         if is_inline {
             let child_box = build_layout_tree(child);
@@ -107,7 +114,7 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
 
 pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
     match layout_box.box_type {
-        BoxType::BlockNode(_) => {
+        BoxType::BlockNode(_) | BoxType::InlineBlockNode(_) => {
             layout_block(layout_box, &containing_block);
         }
         BoxType::AnonymousBlock => {
@@ -143,41 +150,129 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
     let available_width = layout_box.dimensions.content.width;
 
     for child in &mut layout_box.children {
-        let mut child_containing = Dimensions::default();
-        child_containing.content.width = available_width;
-        layout(child, child_containing);
+        match &child.box_type {
+            BoxType::InlineNode(_) => {
+                let mut child_containing = Dimensions::default();
+                child_containing.content.width = available_width;
+                layout_inline_node(child, &child_containing);
 
-        let child_total_width = child.dimensions.content.width
-            + child.dimensions.padding.left + child.dimensions.padding.right
-            + child.dimensions.border.left + child.dimensions.border.right
-            + child.dimensions.margin.left + child.dimensions.margin.right;
+                let child_total_width = child.dimensions.content.width
+                    + child.dimensions.padding.left + child.dimensions.padding.right
+                    + child.dimensions.border.left + child.dimensions.border.right
+                    + child.dimensions.margin.left + child.dimensions.margin.right;
 
-        let child_total_height = child.dimensions.content.height
-            + child.dimensions.padding.top + child.dimensions.padding.bottom
-            + child.dimensions.border.top + child.dimensions.border.bottom
-            + child.dimensions.margin.top + child.dimensions.margin.bottom;
+                let child_total_height = child.dimensions.content.height
+                    + child.dimensions.padding.top + child.dimensions.padding.bottom
+                    + child.dimensions.border.top + child.dimensions.border.bottom
+                    + child.dimensions.margin.top + child.dimensions.margin.bottom;
 
-        // Line wrap check
-        if current_x + child_total_width > layout_box.dimensions.content.x + available_width
-            && current_x > layout_box.dimensions.content.x
-        {
-            current_y += line_height;
-            current_x = layout_box.dimensions.content.x;
-            line_height = 0.0;
+                // Line wrap check
+                if current_x + child_total_width > layout_box.dimensions.content.x + available_width
+                    && current_x > layout_box.dimensions.content.x
+                {
+                    current_y += line_height;
+                    current_x = layout_box.dimensions.content.x;
+                    line_height = 0.0;
+                }
+
+                let target_x = current_x
+                    + child.dimensions.margin.left
+                    + child.dimensions.border.left
+                    + child.dimensions.padding.left;
+                let target_y = current_y
+                    + child.dimensions.margin.top
+                    + child.dimensions.border.top
+                    + child.dimensions.padding.top;
+                set_absolute_positions(child, target_x, target_y);
+
+                current_x += child_total_width;
+                line_height = line_height.max(child_total_height);
+            }
+            BoxType::InlineBlockNode(_) => {
+                let styled = match &child.box_type {
+                    BoxType::InlineBlockNode(s) => Some(s.clone()),
+                    _ => None,
+                };
+
+                // Parse margin / border / padding
+                let margin_left = get_length(styled.as_ref(), "margin-left", containing_block.content.width);
+                let margin_right = get_length(styled.as_ref(), "margin-right", containing_block.content.width);
+                let padding_left = get_length(styled.as_ref(), "padding-left", containing_block.content.width);
+                let padding_right = get_length(styled.as_ref(), "padding-right", containing_block.content.width);
+                let border_left = get_length(styled.as_ref(), "border-left", containing_block.content.width);
+                let border_right = get_length(styled.as_ref(), "border-right", containing_block.content.width);
+
+                let margin_top = get_length(styled.as_ref(), "margin-top", containing_block.content.width);
+                let margin_bottom = get_length(styled.as_ref(), "margin-bottom", containing_block.content.width);
+                let padding_top = get_length(styled.as_ref(), "padding-top", containing_block.content.width);
+                let padding_bottom = get_length(styled.as_ref(), "padding-bottom", containing_block.content.width);
+                let border_top = get_length(styled.as_ref(), "border-top", containing_block.content.width);
+                let border_bottom = get_length(styled.as_ref(), "border-bottom", containing_block.content.width);
+
+                child.dimensions.margin = EdgeSizes { top: margin_top, right: margin_right, bottom: margin_bottom, left: margin_left };
+                child.dimensions.padding = EdgeSizes { top: padding_top, right: padding_right, bottom: padding_bottom, left: padding_left };
+                child.dimensions.border = EdgeSizes { top: border_top, right: border_right, bottom: border_bottom, left: border_left };
+
+                // Calculate width
+                let total_horizontal = margin_left + border_left + padding_left + padding_right + border_right + margin_right;
+                let explicit_width = styled.as_ref()
+                    .and_then(|s| s.specified_values.get("width"))
+                    .map(|v| parse_length_percent(v, containing_block.content.width));
+
+                let box_sizing = get_box_sizing(styled.as_ref());
+                let content_width = match (explicit_width, box_sizing) {
+                    (Some(w), "border-box") => (w - border_left - padding_left - padding_right - border_right).max(0.0),
+                    (Some(w), _) => w,
+                    (None, _) => (available_width - total_horizontal).max(0.0),
+                };
+
+                // Min/max width
+                let min_width = styled.as_ref()
+                    .and_then(|s| s.specified_values.get("min-width"))
+                    .map(|v| parse_length_percent(v, containing_block.content.width))
+                    .unwrap_or(0.0);
+                let max_width = styled.as_ref()
+                    .and_then(|s| s.specified_values.get("max-width"))
+                    .map(|v| parse_length_percent(v, containing_block.content.width))
+                    .unwrap_or(f32::INFINITY);
+                let content_width = content_width.clamp(min_width, max_width);
+
+                // Internal block layout (relative coordinates, offset later)
+                let mut ib_containing = Dimensions::default();
+                ib_containing.content.x = 0.0;
+                ib_containing.content.y = 0.0;
+                ib_containing.content.width = content_width;
+                layout_block(child, &ib_containing);
+
+                // Total outer size for line layout
+                let child_total_width = content_width
+                    + padding_left + padding_right
+                    + border_left + border_right
+                    + margin_left + margin_right;
+                let child_total_height = child.dimensions.content.height
+                    + padding_top + padding_bottom
+                    + border_top + border_bottom
+                    + margin_top + margin_bottom;
+
+                // Line wrap check
+                if current_x + child_total_width > layout_box.dimensions.content.x + available_width
+                    && current_x > layout_box.dimensions.content.x
+                {
+                    current_y += line_height;
+                    current_x = layout_box.dimensions.content.x;
+                    line_height = 0.0;
+                }
+
+                // Place inline-block at correct absolute position
+                let target_x = current_x + margin_left + border_left + padding_left;
+                let target_y = current_y + margin_top + border_top + padding_top;
+                set_absolute_positions(child, target_x, target_y);
+
+                current_x += child_total_width;
+                line_height = line_height.max(child_total_height);
+            }
+            _ => {}
         }
-
-        let target_x = current_x
-            + child.dimensions.margin.left
-            + child.dimensions.border.left
-            + child.dimensions.padding.left;
-        let target_y = current_y
-            + child.dimensions.margin.top
-            + child.dimensions.border.top
-            + child.dimensions.padding.top;
-        set_absolute_positions(child, target_x, target_y);
-
-        current_x += child_total_width;
-        line_height = line_height.max(child_total_height);
     }
 
     layout_box.dimensions.content.height = current_y + line_height - layout_box.dimensions.content.y;
@@ -294,12 +389,45 @@ fn layout_inline_node(layout_box: &mut LayoutBox, containing_block: &Dimensions)
     }
 }
 
+fn get_box_sizing(styled: Option<&StyledNode>) -> &str {
+    styled
+        .and_then(|s| s.specified_values.get("box-sizing"))
+        .map(|s| s.as_str())
+        .unwrap_or("content-box")
+}
+
+fn collapse_margins(m1: f32, m2: f32) -> f32 {
+    if m1 > 0.0 && m2 > 0.0 {
+        m1.max(m2)
+    } else if m1 < 0.0 && m2 < 0.0 {
+        m1.min(m2)
+    } else {
+        m1 + m2
+    }
+}
+
+fn compute_vertical_margins(layout_box: &LayoutBox, container_width: f32) -> (f32, f32) {
+    match &layout_box.box_type {
+        BoxType::BlockNode(styled)
+        | BoxType::InlineNode(styled)
+        | BoxType::InlineBlockNode(styled) => {
+            let top = get_length(Some(styled), "margin-top", container_width);
+            let bottom = get_length(Some(styled), "margin-bottom", container_width);
+            (top, bottom)
+        }
+        BoxType::AnonymousBlock => (0.0, 0.0),
+    }
+}
+
 fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     let styled = match &layout_box.box_type {
-        BoxType::BlockNode(s) | BoxType::InlineNode(s) => Some(s.clone()),
+        BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s) => Some(s.clone()),
         BoxType::AnonymousBlock => None,
     };
 
+    let box_sizing = get_box_sizing(styled.as_ref());
+
+    // ── Horizontal metrics ─────────────────────────────
     let margin_left = get_length(styled.as_ref(), "margin-left", containing_block.content.width);
     let margin_right = get_length(styled.as_ref(), "margin-right", containing_block.content.width);
     let padding_left = get_length(styled.as_ref(), "padding-left", containing_block.content.width);
@@ -307,14 +435,33 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     let border_left = get_length(styled.as_ref(), "border-left", containing_block.content.width);
     let border_right = get_length(styled.as_ref(), "border-right", containing_block.content.width);
 
+    // ── Width calculation ──────────────────────────────
     let explicit_width = styled.as_ref()
         .and_then(|s| s.specified_values.get("width"))
         .map(|v| parse_length_percent(v, containing_block.content.width));
 
     let total_horizontal = margin_left + border_left + padding_left + padding_right + border_right + margin_right;
-    let width = explicit_width.unwrap_or((containing_block.content.width - total_horizontal).max(0.0));
 
-    layout_box.dimensions.content.width = width;
+    let content_width = match (explicit_width, box_sizing) {
+        (Some(w), "border-box") => {
+            (w - border_left - padding_left - padding_right - border_right).max(0.0)
+        }
+        (Some(w), _) => w,
+        (None, _) => (containing_block.content.width - total_horizontal).max(0.0),
+    };
+
+    // min/max-width constraints
+    let min_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("min-width"))
+        .map(|v| parse_length_percent(v, containing_block.content.width))
+        .unwrap_or(0.0);
+    let max_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("max-width"))
+        .map(|v| parse_length_percent(v, containing_block.content.width))
+        .unwrap_or(f32::INFINITY);
+    let content_width = content_width.clamp(min_width, max_width);
+
+    layout_box.dimensions.content.width = content_width;
     layout_box.dimensions.margin.left = margin_left;
     layout_box.dimensions.margin.right = margin_right;
     layout_box.dimensions.padding.left = padding_left;
@@ -322,6 +469,7 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     layout_box.dimensions.border.left = border_left;
     layout_box.dimensions.border.right = border_right;
 
+    // ── Vertical metrics ─────────────────────────────────
     let margin_top = get_length(styled.as_ref(), "margin-top", containing_block.content.width);
     let margin_bottom = get_length(styled.as_ref(), "margin-bottom", containing_block.content.width);
     let padding_top = get_length(styled.as_ref(), "padding-top", containing_block.content.width);
@@ -339,53 +487,79 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     layout_box.dimensions.content.x = containing_block.content.x + margin_left + border_left + padding_left;
     layout_box.dimensions.content.y = containing_block.content.y + margin_top + border_top + padding_top;
 
-    let mut current_y = layout_box.dimensions.content.y;
+    // ── Children layout with margin collapsing ─────────
+    let mut last_border_bottom = layout_box.dimensions.content.y;
+    let mut last_margin_bottom = 0.0f32;
+
     for child in &mut layout_box.children {
+        let (child_margin_top, child_margin_bottom) = compute_vertical_margins(child, layout_box.dimensions.content.width);
+
         let mut child_containing = Dimensions::default();
         child_containing.content.x = layout_box.dimensions.content.x;
-        child_containing.content.y = current_y;
         child_containing.content.width = layout_box.dimensions.content.width;
+
+        // Margin collapsing between siblings
+        let collapsed = collapse_margins(last_margin_bottom, child_margin_top);
+        child_containing.content.y = last_border_bottom + collapsed - child_margin_top;
 
         layout(child, child_containing);
 
-        current_y = child.dimensions.content.y
+        last_border_bottom = child.dimensions.content.y
             + child.dimensions.content.height
             + child.dimensions.padding.bottom
-            + child.dimensions.border.bottom
-            + child.dimensions.margin.bottom;
+            + child.dimensions.border.bottom;
+        last_margin_bottom = child_margin_bottom;
     }
 
-    if let Some(h) = styled.as_ref().and_then(|s| s.specified_values.get("height")) {
-        layout_box.dimensions.content.height = parse_length_percent(h, containing_block.content.height);
+    // ── Height calculation ─────────────────────────────
+    let explicit_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("height"))
+        .map(|v| parse_length_percent(v, containing_block.content.height));
+
+    let min_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("min-height"))
+        .map(|v| parse_length_percent(v, containing_block.content.height))
+        .unwrap_or(0.0);
+    let max_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("max-height"))
+        .map(|v| parse_length_percent(v, containing_block.content.height))
+        .unwrap_or(f32::INFINITY);
+
+    let computed_content_height = if layout_box.children.is_empty() {
+        0.0
     } else {
-        let content_bottom = if layout_box.children.is_empty() {
-            layout_box.dimensions.content.y
-        } else {
-            let last = layout_box.children.last().unwrap();
-            last.dimensions.content.y
-                + last.dimensions.content.height
-                + last.dimensions.padding.bottom
-                + last.dimensions.border.bottom
-                + last.dimensions.margin.bottom
-        };
-        let computed = content_bottom - layout_box.dimensions.content.y;
+        let last = layout_box.children.last().unwrap();
+        let last_child_bottom = last.dimensions.content.y
+            + last.dimensions.content.height
+            + last.dimensions.padding.bottom
+            + last.dimensions.border.bottom;
+        last_child_bottom - layout_box.dimensions.content.y
+    };
 
-        // If height is 0 but we have text content, calculate minimum text height
-        if computed <= 0.0 {
-            if let Some(styled) = styled.as_ref() {
-                let text_height = measure_text_height(styled, layout_box.dimensions.content.width);
-                if text_height > 0.0 {
-                    layout_box.dimensions.content.height = text_height;
-                } else {
-                    layout_box.dimensions.content.height = computed;
-                }
+    let mut final_height = match explicit_height {
+        Some(h) => {
+            let content_h = if box_sizing == "border-box" {
+                (h - border_top - padding_top - padding_bottom - border_bottom).max(0.0)
             } else {
-                layout_box.dimensions.content.height = computed;
-            }
-        } else {
-            layout_box.dimensions.content.height = computed;
+                h
+            };
+            content_h.clamp(min_height, max_height)
         }
-    }
+        None => {
+            let mut h = computed_content_height;
+            if h <= 0.0 {
+                if let Some(styled) = styled.as_ref() {
+                    let text_height = measure_text_height(styled, layout_box.dimensions.content.width);
+                    if text_height > 0.0 {
+                        h = text_height;
+                    }
+                }
+            }
+            h.clamp(min_height, max_height)
+        }
+    };
+
+    layout_box.dimensions.content.height = final_height;
 }
 
 /// Estimate text height based on character count and container width
@@ -454,7 +628,7 @@ pub fn print_layout_box(layout_box: &LayoutBox, indent: usize) {
     let spaces = "  ".repeat(indent);
 
     match &layout_box.box_type {
-        BoxType::BlockNode(styled) | BoxType::InlineNode(styled) => {
+        BoxType::BlockNode(styled) | BoxType::InlineNode(styled) | BoxType::InlineBlockNode(styled) => {
             if let Node::Element(el) = &styled.node {
                 println!(
                     "{}<{}> x={:.0} y={:.0} w={:.0} h={:.0}",
@@ -487,6 +661,7 @@ pub fn print_layout_box(layout_box: &LayoutBox, indent: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dom::Element;
     use std::collections::HashMap;
 
     fn styled_element(tag: &str, styles: HashMap<String, String>, children: Vec<StyledNode>) -> StyledNode {
@@ -572,7 +747,8 @@ mod tests {
     }
 
     #[test]
-    fn test_layout_with_margin() {
+    fn test_layout_margin_collapsing() {
+        // 20px bottom + 10px top => collapsed to 20px (max of same-sign margins)
         let mut styles1 = HashMap::new();
         styles1.insert("margin-bottom".to_string(), "20px".to_string());
         let div1 = styled_element("div", styles1, vec![]);
@@ -588,8 +764,164 @@ mod tests {
         let child1 = &root.children[0];
         let child2 = &root.children[1];
 
+        // child1 content starts at parent content top (0)
         assert_eq!(child1.dimensions.content.y, 0.0);
-        assert_eq!(child2.dimensions.content.y, 30.0);
+        // child2 content starts after 20px collapsed margin + its own border/padding (0)
+        assert_eq!(child2.dimensions.content.y, 20.0);
+    }
+
+    #[test]
+    fn test_layout_margin_collapsing_equal() {
+        // 15px bottom + 15px top => collapsed to 15px
+        let mut styles1 = HashMap::new();
+        styles1.insert("margin-bottom".to_string(), "15px".to_string());
+        let div1 = styled_element("div", styles1, vec![]);
+
+        let mut styles2 = HashMap::new();
+        styles2.insert("margin-top".to_string(), "15px".to_string());
+        let div2 = styled_element("div", styles2, vec![]);
+
+        let parent = styled_element("div", HashMap::new(), vec![div1, div2]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child2 = &root.children[1];
+        assert_eq!(child2.dimensions.content.y, 15.0);
+    }
+
+    #[test]
+    fn test_layout_margin_no_collapse_with_padding() {
+        // Parent has padding, so margin collapsing with parent is prevented.
+        // But sibling collapsing still happens.
+        let mut parent_styles = HashMap::new();
+        parent_styles.insert("padding-top".to_string(), "5px".to_string());
+
+        let mut styles1 = HashMap::new();
+        styles1.insert("margin-bottom".to_string(), "20px".to_string());
+        let div1 = styled_element("div", styles1, vec![]);
+
+        let mut styles2 = HashMap::new();
+        styles2.insert("margin-top".to_string(), "10px".to_string());
+        let div2 = styled_element("div", styles2, vec![]);
+
+        let parent = styled_element("div", parent_styles, vec![div1, div2]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child1 = &root.children[0];
+        let child2 = &root.children[1];
+
+        // Parent content top = 0 + 5(parent padding) + 0(parent border) + 0(parent margin) = 5
+        // Wait, parent padding is applied inside layout_block, so parent.content.y = containing.y(0) + margin(0) + border(0) + padding(5) = 5
+        // child1 starts at parent.content.y = 5
+        assert_eq!(child1.dimensions.content.y, 5.0);
+        // child2 starts after child1 + collapsed margin 20
+        assert_eq!(child2.dimensions.content.y, 5.0 + 20.0);
+    }
+
+    #[test]
+    fn test_layout_box_sizing_border_box() {
+        let mut styles = HashMap::new();
+        styles.insert("width".to_string(), "200px".to_string());
+        styles.insert("padding-left".to_string(), "20px".to_string());
+        styles.insert("padding-right".to_string(), "20px".to_string());
+        styles.insert("border-left".to_string(), "5px".to_string());
+        styles.insert("border-right".to_string(), "5px".to_string());
+        styles.insert("box-sizing".to_string(), "border-box".to_string());
+
+        let styled = styled_element("div", styles, vec![]);
+        let mut root = build_layout_tree(&styled);
+        layout(&mut root, viewport());
+
+        // border-box: content width = 200 - 5 - 20 - 20 - 5 = 150
+        assert_eq!(root.dimensions.content.width, 150.0);
+        // Total border-box width still 200
+        assert_eq!(
+            root.dimensions.content.width
+                + root.dimensions.padding.left + root.dimensions.padding.right
+                + root.dimensions.border.left + root.dimensions.border.right,
+            200.0
+        );
+    }
+
+    #[test]
+    fn test_layout_min_max_width() {
+        let mut styles = HashMap::new();
+        styles.insert("width".to_string(), "50%".to_string());   // 400px in 800px viewport
+        styles.insert("min-width".to_string(), "500px".to_string());
+
+        let styled = styled_element("div", styles, vec![]);
+        let mut root = build_layout_tree(&styled);
+        layout(&mut root, viewport());
+
+        assert_eq!(root.dimensions.content.width, 500.0);
+    }
+
+    #[test]
+    fn test_layout_inline_block() {
+        let mut ib_styles = HashMap::new();
+        ib_styles.insert("display".to_string(), "inline-block".to_string());
+        ib_styles.insert("width".to_string(), "100px".to_string());
+        ib_styles.insert("height".to_string(), "50px".to_string());
+        let ib = styled_element("span", ib_styles, vec![]);
+
+        let parent = styled_element("div", HashMap::new(), vec![ib]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        // Parent should have one AnonymousBlock containing the inline-block
+        assert_eq!(root.children.len(), 1);
+        let anon = &root.children[0];
+        assert!(matches!(anon.box_type, BoxType::AnonymousBlock));
+        assert_eq!(anon.children.len(), 1);
+
+        let ib_box = &anon.children[0];
+        assert!(matches!(ib_box.box_type, BoxType::InlineBlockNode(_)));
+        assert_eq!(ib_box.dimensions.content.width, 100.0);
+        assert_eq!(ib_box.dimensions.content.height, 50.0);
+    }
+
+    #[test]
+    fn test_skip_hidden_input() {
+        let mut dom_attrs = HashMap::new();
+        dom_attrs.insert("type".to_string(), "hidden".to_string());
+        dom_attrs.insert("value".to_string(), "secret".to_string());
+        let hidden_input = StyledNode {
+            node: Node::Element(Element::new("input", dom_attrs, vec![])),
+            specified_values: HashMap::new(),
+            children: vec![],
+        };
+
+        let visible_text = StyledNode {
+            node: Node::text("Hello"),
+            specified_values: HashMap::new(),
+            children: vec![],
+        };
+        let parent = styled_element("div", HashMap::new(), vec![hidden_input, visible_text]);
+
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        // Text node and hidden input should both be skipped => empty div
+        assert_eq!(root.children.len(), 0);
+    }
+
+    #[test]
+    fn test_layout_inline_block_auto_width() {
+        let mut ib_styles = HashMap::new();
+        ib_styles.insert("display".to_string(), "inline-block".to_string());
+        // No explicit width; should use available width (800 - margins - borders - padding)
+        let ib = styled_element("span", ib_styles, vec![]);
+
+        let parent = styled_element("div", HashMap::new(), vec![ib]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let anon = &root.children[0];
+        let ib_box = &anon.children[0];
+        assert!(matches!(ib_box.box_type, BoxType::InlineBlockNode(_)));
+        // Auto width in 800px viewport => 800.0 (no margin/padding/border on inline-block)
+        assert_eq!(ib_box.dimensions.content.width, 800.0);
     }
 
     #[test]

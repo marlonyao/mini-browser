@@ -85,4 +85,10 @@ fn main() {
     for cmd in &display_list {
         println!("  {:?}", cmd);
     }
+
+    // Also write JSON for screenshot rendering
+    let json_path = std::env::args().nth(2).unwrap_or_else(|| "/tmp/display_list.json".to_string());
+    let json = serde_json::to_string_pretty(&display_list).unwrap();
+    std::fs::write(&json_path, json).unwrap();
+    println!("JSON written to {}", json_path);
 }

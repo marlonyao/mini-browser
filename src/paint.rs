@@ -1,7 +1,8 @@
 use crate::dom::Node;
 use crate::layout::{parse_value, BoxType, LayoutBox, Rect};
+use serde::Serialize;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -18,7 +19,7 @@ impl Color {
     pub fn white() -> Self { Color::new(1.0, 1.0, 1.0, 1.0) }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum DisplayCommand {
     SolidColor(Rect, Color),
     Text(String, Rect, Color),
@@ -102,7 +103,7 @@ fn build_display_list_inner(
     clip: &Rect,
 ) {
     let styled = match &layout_box.box_type {
-        BoxType::BlockNode(s) | BoxType::InlineNode(s) => Some(s),
+        BoxType::BlockNode(s) | BoxType::InlineNode(s) | BoxType::InlineBlockNode(s) => Some(s),
         BoxType::AnonymousBlock => None,
     };
 
@@ -245,31 +246,34 @@ fn build_display_list_inner(
             }
             // 6. Input placeholder
             if el.tag == "input" {
-                let value = el.attrs.get("value")
-                    .or_else(|| el.attrs.get("placeholder"))
-                    .cloned()
-                    .unwrap_or_default();
-                let input_rect = Rect {
-                    x: dim.content.x,
-                    y: dim.content.y,
-                    width: dim.content.width,
-                    height: dim.content.height,
-                };
-                if let Some(clipped) = rect_intersect(&input_rect, clip) {
-                    // White background
-                    list.push(DisplayCommand::SolidColor(clipped.clone(), Color::new(1.0, 1.0, 1.0, 1.0)));
-                    // Gray border
-                    list.push(DisplayCommand::Border(clipped.clone(), 1.0, Color::new(0.7, 0.7, 0.7, 1.0)));
-                    // Text inside
-                    if !value.is_empty() {
-                        let text_rect = Rect {
-                            x: dim.content.x + 4.0,
-                            y: dim.content.y + 2.0,
-                            width: dim.content.width - 8.0,
-                            height: dim.content.height - 4.0,
-                        };
-                        if let Some(clipped_text) = rect_intersect(&text_rect, clip) {
-                            list.push(DisplayCommand::Text(value, clipped_text, Color::black()));
+                let is_hidden = el.attrs.get("type").map(|s| s == "hidden").unwrap_or(false);
+                if !is_hidden {
+                    let value = el.attrs.get("value")
+                        .or_else(|| el.attrs.get("placeholder"))
+                        .cloned()
+                        .unwrap_or_default();
+                    let input_rect = Rect {
+                        x: dim.content.x,
+                        y: dim.content.y,
+                        width: dim.content.width,
+                        height: dim.content.height,
+                    };
+                    if let Some(clipped) = rect_intersect(&input_rect, clip) {
+                        // White background
+                        list.push(DisplayCommand::SolidColor(clipped.clone(), Color::new(1.0, 1.0, 1.0, 1.0)));
+                        // Gray border
+                        list.push(DisplayCommand::Border(clipped.clone(), 1.0, Color::new(0.7, 0.7, 0.7, 1.0)));
+                        // Text inside
+                        if !value.is_empty() {
+                            let text_rect = Rect {
+                                x: dim.content.x + 4.0,
+                                y: dim.content.y + 2.0,
+                                width: dim.content.width - 8.0,
+                                height: dim.content.height - 4.0,
+                            };
+                            if let Some(clipped_text) = rect_intersect(&text_rect, clip) {
+                                list.push(DisplayCommand::Text(value, clipped_text, Color::black()));
+                            }
                         }
                     }
                 }
