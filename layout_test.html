@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Mini Browser Layout Report</title>
+<style>
+body { font-family: monospace; margin: 20px; }
+table { border-collapse: collapse; margin: 20px 0; }
+th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+th { background: #f0f0f0; }
+.canvas { position: relative; width: 800px; height: 600px; border: 2px solid #333; background: white; margin: 20px 0; }
+.box { position: absolute; box-sizing: border-box; }
+.text { position: absolute; white-space: nowrap; overflow: hidden; }
+</style></head><body>
+<h1>Mini Browser Layout Report</h1>
+<h2>Source HTML</h2>
+<pre>
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;&lt;title&gt;Layout Test&lt;/title&gt;&lt;/head&gt;
+&lt;body style=&quot;margin: 20px; font-family: sans-serif;&quot;&gt;
+    &lt;h1 style=&quot;color: #333;&quot;&gt;Block Layout Test&lt;/h1&gt;
+    &lt;div style=&quot;background: #e0e0e0; padding: 20px; margin: 10px 0;&quot;&gt;
+        &lt;p style=&quot;margin: 0;&quot;&gt;This is a paragraph inside a div with padding.&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;div style=&quot;width: 300px; height: 100px; background: #4CAF50; margin: 20px auto;&quot;&gt;
+        Fixed size block
+    &lt;/div&gt;
+    &lt;div style=&quot;display: inline-block; background: #2196F3; padding: 10px; margin: 5px;&quot;&gt;
+        Inline Block 1
+    &lt;/div&gt;
+    &lt;div style=&quot;display: inline-block; background: #FF9800; padding: 10px; margin: 5px;&quot;&gt;
+        Inline Block 2
+    &lt;/div&gt;
+    &lt;div style=&quot;display: inline-block; background: #9C27B0; padding: 10px; margin: 5px;&quot;&gt;
+        Inline Block 3
+    &lt;/div&gt;
+    &lt;p style=&quot;margin-top: 30px;&quot;&gt;
+        &lt;span style=&quot;background: yellow;&quot;&gt;Highlighted text&lt;/span&gt; in a paragraph.
+    &lt;/p&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</pre>
+<h2>Rendered Output</h2>
+<div class="canvas">
+<div class="text" style="left:0px;top:0px;width:136px;height:19.2px;color:rgb(0,0,0);font-size:19.2px;display:flex;align-items:center;">Block Layout Test</div>
+<div class="text" style="left:0px;top:19.2px;width:368px;height:19.2px;color:rgb(0,0,0);font-size:19.2px;display:flex;align-items:center;">This is a paragraph inside a div with padding.</div>
+<div class="text" style="left:0px;top:38.4px;width:128px;height:19.2px;color:rgb(0,0,0);font-size:19.2px;display:flex;align-items:center;">Fixed size block</div>
+<div class="text" style="left:0px;top:57.600002px;width:112px;height:19.2px;color:rgb(0,0,0);font-size:19.2px;display:flex;align-items:center;">Inline Block 1</div>
+<div class="text" style="left:0px;top:76.8px;width:112px;height:19.199997px;color:rgb(0,0,0);font-size:19.199997px;display:flex;align-items:center;">Inline Block 2</div>
+<div class="text" style="left:0px;top:96px;width:112px;height:19.199997px;color:rgb(0,0,0);font-size:19.199997px;display:flex;align-items:center;">Inline Block 3</div>
+<div class="text" style="left:0px;top:115.2px;width:128px;height:19.199997px;color:rgb(0,0,0);font-size:19.199997px;display:flex;align-items:center;">Highlighted text</div>
+<div class="text" style="left:0px;top:115.2px;width:120px;height:19.199997px;color:rgb(0,0,0);font-size:19.199997px;display:flex;align-items:center;">in a paragraph.</div>
+</div>
+<h2>Display List (first 50)</h2>
+<table><tr><th>#</th><th>Type</th><th>Rect</th><th>Details</th></tr>
+<tr><td>0</td><td>Text</td><td>0.0,0.0 136.0x19.2</td><td>'Block Layout Test' rgb(0,0,0)</td></tr>
+<tr><td>1</td><td>Text</td><td>0.0,19.2 368.0x19.2</td><td>'This is a paragraph ' rgb(0,0,0)</td></tr>
+<tr><td>2</td><td>Text</td><td>0.0,38.4 128.0x19.2</td><td>'Fixed size block' rgb(0,0,0)</td></tr>
+<tr><td>3</td><td>Text</td><td>0.0,57.6 112.0x19.2</td><td>'Inline Block 1' rgb(0,0,0)</td></tr>
+<tr><td>4</td><td>Text</td><td>0.0,76.8 112.0x19.2</td><td>'Inline Block 2' rgb(0,0,0)</td></tr>
+<tr><td>5</td><td>Text</td><td>0.0,96.0 112.0x19.2</td><td>'Inline Block 3' rgb(0,0,0)</td></tr>
+<tr><td>6</td><td>Text</td><td>0.0,115.2 128.0x19.2</td><td>'Highlighted text' rgb(0,0,0)</td></tr>
+<tr><td>7</td><td>Text</td><td>0.0,115.2 120.0x19.2</td><td>'in a paragraph.' rgb(0,0,0)</td></tr>
+</table></body></html>

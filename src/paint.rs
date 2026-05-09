@@ -103,7 +103,8 @@ fn build_display_list_inner(
     clip: &Rect,
 ) {
     let styled = match &layout_box.box_type {
-        BoxType::BlockNode(s) | BoxType::InlineNode(s) | BoxType::InlineBlockNode(s) => Some(s),
+        BoxType::BlockNode(s) | BoxType::InlineNode(s) | BoxType::InlineBlockNode(s)
+        | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s) => Some(s),
         BoxType::AnonymousBlock => None,
     };
 

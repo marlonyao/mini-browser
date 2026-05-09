@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="white"/>
+  <text x="0.0" y="16.3" font-size="19.2" fill="rgb(0,0,0)">Float Left</text>
+  <text x="0.0" y="35.5" font-size="19.2" fill="rgb(0,0,0)">Float Right</text>
+  <text x="0.0" y="54.7" font-size="19.2" fill="rgb(0,0,0)">This text should flow between the two floats.
+      It should wrap around the red box on the left</text>
+  <text x="0.0" y="73.9" font-size="19.2" fill="rgb(0,0,0)">and the teal box on the right.</text>
+  <text x="0.0" y="93.1" font-size="19.2" fill="rgb(0,0,0)">This block clears both floats</text>
+</svg>

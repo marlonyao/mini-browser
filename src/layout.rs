@@ -10,6 +10,52 @@ pub struct Rect {
     pub height: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FloatSide {
+    Left,
+    Right,
+}
+
+/// Tracks floating boxes inside a block container so that inline
+/// content can flow around them.
+#[derive(Debug, Default, Clone)]
+pub struct FloatContext {
+    pub floats: Vec<(Rect, FloatSide)>,
+}
+
+impl FloatContext {
+    /// Return the horizontal interval that is not covered by any float
+    /// overlapping the vertical band `[y, y + height)`.
+    pub fn available_rect(&self, y: f32, height: f32, container: &Rect) -> Rect {
+        let mut left = container.x;
+        let mut right = container.x + container.width;
+        let bottom = y + height;
+
+        for (rect, side) in &self.floats {
+            let float_bottom = rect.y + rect.height;
+            let float_top = rect.y;
+            if bottom > float_top && y < float_bottom {
+                match side {
+                    FloatSide::Left => left = left.max(rect.x + rect.width),
+                    FloatSide::Right => right = right.min(rect.x),
+                }
+            }
+        }
+
+        Rect {
+            x: left,
+            y,
+            width: (right - left).max(0.0),
+            height,
+        }
+    }
+
+    /// Lowest y where all current floats have ended (used for `clear: both`).
+    pub fn clear_both_y(&self) -> f32 {
+        self.floats.iter().map(|(r, _)| r.y + r.height).fold(0.0f32, f32::max)
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct EdgeSizes {
     pub top: f32,
@@ -32,6 +78,8 @@ pub enum BoxType {
     InlineNode(StyledNode),
     InlineBlockNode(StyledNode),  // 新增
     AnonymousBlock,
+    FloatLeftNode(StyledNode),   // 新增
+    FloatRightNode(StyledNode),  // 新增
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -56,10 +104,15 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
         Node::Text(_) => panic!("Text nodes should not build layout tree directly"),
         Node::Element(_) => {
             let display = styled.specified_values.get("display").map(|s| s.as_str());
-            match display {
-                Some("inline") => BoxType::InlineNode(styled.clone()),
-                Some("inline-block") => BoxType::InlineBlockNode(styled.clone()),  // 新增
-                _ => BoxType::BlockNode(styled.clone()),
+            let float = styled.specified_values.get("float").map(|s| s.as_str());
+            match float {
+                Some("left") => BoxType::FloatLeftNode(styled.clone()),
+                Some("right") => BoxType::FloatRightNode(styled.clone()),
+                _ => match display {
+                    Some("inline") => BoxType::InlineNode(styled.clone()),
+                    Some("inline-block") => BoxType::InlineBlockNode(styled.clone()),
+                    _ => BoxType::BlockNode(styled.clone()),
+                },
             }
         }
     };
@@ -118,10 +171,16 @@ pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
             layout_block(layout_box, &containing_block);
         }
         BoxType::AnonymousBlock => {
-            layout_inline_block(layout_box, &containing_block);
+            layout_inline_block(layout_box, &containing_block, &mut FloatContext::default());
         }
         BoxType::InlineNode(_) => {
             layout_inline_node(layout_box, &containing_block);
+        }
+        BoxType::FloatLeftNode(_) | BoxType::FloatRightNode(_) => {
+            // Float boxes are laid out by their parent block container.
+            // When layout() is called directly on a float (e.g. top-level),
+            // treat it like a normal block for sizing.
+            layout_float(layout_box, &containing_block.content, &mut FloatContext::default());
         }
     }
 }
@@ -139,7 +198,7 @@ fn set_absolute_positions(layout_box: &mut LayoutBox, abs_x: f32, abs_y: f32) {
     }
 }
 
-fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
+fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions, float_context: &mut FloatContext) {
     layout_box.dimensions.content.x = containing_block.content.x;
     layout_box.dimensions.content.y = containing_block.content.y;
     layout_box.dimensions.content.width = containing_block.content.width;
@@ -147,13 +206,13 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
     let mut current_x = layout_box.dimensions.content.x;
     let mut current_y = layout_box.dimensions.content.y;
     let mut line_height = 0.0f32;
-    let available_width = layout_box.dimensions.content.width;
+    let container_rect = layout_box.dimensions.content.clone();
 
     for child in &mut layout_box.children {
         match &child.box_type {
             BoxType::InlineNode(_) => {
                 let mut child_containing = Dimensions::default();
-                child_containing.content.width = available_width;
+                child_containing.content.width = container_rect.width;
                 layout_inline_node(child, &child_containing);
 
                 let child_total_width = child.dimensions.content.width
@@ -166,12 +225,21 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
                     + child.dimensions.border.top + child.dimensions.border.bottom
                     + child.dimensions.margin.top + child.dimensions.margin.bottom;
 
+                // Query float context for available space at current line
+                let available = float_context.available_rect(current_y, child_total_height, &container_rect);
+
+                // If current x is before available start, move right
+                if current_x < available.x {
+                    current_x = available.x;
+                }
+
                 // Line wrap check
-                if current_x + child_total_width > layout_box.dimensions.content.x + available_width
-                    && current_x > layout_box.dimensions.content.x
+                if current_x + child_total_width > available.x + available.width
+                    && current_x > available.x
                 {
                     current_y += line_height;
-                    current_x = layout_box.dimensions.content.x;
+                    let new_available = float_context.available_rect(current_y, child_total_height, &container_rect);
+                    current_x = new_available.x;
                     line_height = 0.0;
                 }
 
@@ -223,7 +291,7 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
                 let content_width = match (explicit_width, box_sizing) {
                     (Some(w), "border-box") => (w - border_left - padding_left - padding_right - border_right).max(0.0),
                     (Some(w), _) => w,
-                    (None, _) => (available_width - total_horizontal).max(0.0),
+                    (None, _) => (container_rect.width - total_horizontal).max(0.0),
                 };
 
                 // Min/max width
@@ -254,12 +322,20 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
                     + border_top + border_bottom
                     + margin_top + margin_bottom;
 
+                // Query float context for available space
+                let available = float_context.available_rect(current_y, child_total_height, &container_rect);
+
+                if current_x < available.x {
+                    current_x = available.x;
+                }
+
                 // Line wrap check
-                if current_x + child_total_width > layout_box.dimensions.content.x + available_width
-                    && current_x > layout_box.dimensions.content.x
+                if current_x + child_total_width > available.x + available.width
+                    && current_x > available.x
                 {
                     current_y += line_height;
-                    current_x = layout_box.dimensions.content.x;
+                    let new_available = float_context.available_rect(current_y, child_total_height, &container_rect);
+                    current_x = new_available.x;
                     line_height = 0.0;
                 }
 
@@ -410,7 +486,9 @@ fn compute_vertical_margins(layout_box: &LayoutBox, container_width: f32) -> (f3
     match &layout_box.box_type {
         BoxType::BlockNode(styled)
         | BoxType::InlineNode(styled)
-        | BoxType::InlineBlockNode(styled) => {
+        | BoxType::InlineBlockNode(styled)
+        | BoxType::FloatLeftNode(styled)
+        | BoxType::FloatRightNode(styled) => {
             let top = get_length(Some(styled), "margin-top", container_width);
             let bottom = get_length(Some(styled), "margin-bottom", container_width);
             (top, bottom)
@@ -421,7 +499,8 @@ fn compute_vertical_margins(layout_box: &LayoutBox, container_width: f32) -> (f3
 
 fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     let styled = match &layout_box.box_type {
-        BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s) => Some(s.clone()),
+        BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s)
+        | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s) => Some(s.clone()),
         BoxType::AnonymousBlock => None,
     };
 
@@ -487,11 +566,25 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     layout_box.dimensions.content.x = containing_block.content.x + margin_left + border_left + padding_left;
     layout_box.dimensions.content.y = containing_block.content.y + margin_top + border_top + padding_top;
 
-    // ── Children layout with margin collapsing ─────────
+    // ── Children layout with margin collapsing + floats ─────────
+    let mut float_context = FloatContext::default();
+
+    // Round 1: layout all float children first
+    for child in &mut layout_box.children {
+        if matches!(child.box_type, BoxType::FloatLeftNode(_) | BoxType::FloatRightNode(_)) {
+            layout_float(child, &layout_box.dimensions.content, &mut float_context);
+        }
+    }
+
+    // Round 2: layout non-float children, passing float context to inline blocks
     let mut last_border_bottom = layout_box.dimensions.content.y;
     let mut last_margin_bottom = 0.0f32;
 
     for child in &mut layout_box.children {
+        if matches!(child.box_type, BoxType::FloatLeftNode(_) | BoxType::FloatRightNode(_)) {
+            continue;
+        }
+
         let (child_margin_top, child_margin_bottom) = compute_vertical_margins(child, layout_box.dimensions.content.width);
 
         let mut child_containing = Dimensions::default();
@@ -500,9 +593,33 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
 
         // Margin collapsing between siblings
         let collapsed = collapse_margins(last_margin_bottom, child_margin_top);
-        child_containing.content.y = last_border_bottom + collapsed - child_margin_top;
+        let mut child_y = last_border_bottom + collapsed - child_margin_top;
 
-        layout(child, child_containing);
+        // Handle `clear: both` — push below all active floats
+        let clear = match &child.box_type {
+            BoxType::BlockNode(s) | BoxType::InlineNode(s) | BoxType::InlineBlockNode(s) => {
+                s.specified_values.get("clear").map(|v| v.as_str())
+            }
+            BoxType::AnonymousBlock => None,
+            _ => None,
+        };
+        if clear == Some("both") || clear == Some("left") || clear == Some("right") {
+            child_y = child_y.max(float_context.clear_both_y());
+        }
+        child_containing.content.y = child_y;
+
+        match &child.box_type {
+            BoxType::BlockNode(_) | BoxType::InlineBlockNode(_) => {
+                layout_block(child, &child_containing);
+            }
+            BoxType::AnonymousBlock => {
+                layout_inline_block(child, &child_containing, &mut float_context);
+            }
+            BoxType::InlineNode(_) => {
+                layout_inline_node(child, &child_containing);
+            }
+            _ => {}
+        }
 
         last_border_bottom = child.dimensions.content.y
             + child.dimensions.content.height
@@ -536,7 +653,7 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
         last_child_bottom - layout_box.dimensions.content.y
     };
 
-    let mut final_height = match explicit_height {
+    let final_height = match explicit_height {
         Some(h) => {
             let content_h = if box_sizing == "border-box" {
                 (h - border_top - padding_top - padding_bottom - border_bottom).max(0.0)
@@ -560,6 +677,127 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     };
 
     layout_box.dimensions.content.height = final_height;
+}
+
+/// Layout a floated box.  Computes size, finds a free horizontal band
+/// inside `container`, and registers the occupied rectangle in
+/// `float_context` so that later inline content can flow around it.
+fn layout_float(layout_box: &mut LayoutBox, container: &Rect, float_context: &mut FloatContext) {
+    let styled = match &layout_box.box_type {
+        BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s) => Some(s.clone()),
+        _ => return,
+    };
+
+    let side = match &layout_box.box_type {
+        BoxType::FloatLeftNode(_) => FloatSide::Left,
+        BoxType::FloatRightNode(_) => FloatSide::Right,
+        _ => FloatSide::Left,
+    };
+
+    let box_sizing = get_box_sizing(styled.as_ref());
+
+    // ── Horizontal metrics ──
+    let margin_left = get_length(styled.as_ref(), "margin-left", container.width);
+    let margin_right = get_length(styled.as_ref(), "margin-right", container.width);
+    let padding_left = get_length(styled.as_ref(), "padding-left", container.width);
+    let padding_right = get_length(styled.as_ref(), "padding-right", container.width);
+    let border_left = get_length(styled.as_ref(), "border-left", container.width);
+    let border_right = get_length(styled.as_ref(), "border-right", container.width);
+
+    // ── Width ──
+    let total_horizontal = margin_left + border_left + padding_left + padding_right + border_right + margin_right;
+    let explicit_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("width"))
+        .map(|v| parse_length_percent(v, container.width));
+
+    let mut content_width = match (explicit_width, box_sizing) {
+        (Some(w), "border-box") => (w - border_left - padding_left - padding_right - border_right).max(0.0),
+        (Some(w), _) => w,
+        (None, _) => (container.width - total_horizontal).max(0.0),
+    };
+
+    let min_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("min-width"))
+        .map(|v| parse_length_percent(v, container.width))
+        .unwrap_or(0.0);
+    let max_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("max-width"))
+        .map(|v| parse_length_percent(v, container.width))
+        .unwrap_or(f32::INFINITY);
+    content_width = content_width.clamp(min_width, max_width);
+
+    // ── Vertical metrics ──
+    let margin_top = get_length(styled.as_ref(), "margin-top", container.width);
+    let margin_bottom = get_length(styled.as_ref(), "margin-bottom", container.width);
+    let padding_top = get_length(styled.as_ref(), "padding-top", container.width);
+    let padding_bottom = get_length(styled.as_ref(), "padding-bottom", container.width);
+    let border_top = get_length(styled.as_ref(), "border-top", container.width);
+    let border_bottom = get_length(styled.as_ref(), "border-bottom", container.width);
+
+    // ── Find a vertical band tall enough ──
+    let outer_width = content_width
+        + padding_left + padding_right
+        + border_left + border_right
+        + margin_left + margin_right;
+
+    // Use 1px as a probe height; we will re-measure after internal layout.
+    let mut y = container.y;
+    loop {
+        let avail = float_context.available_rect(y, 1.0, container);
+        if avail.width >= outer_width {
+            break;
+        }
+        y += 1.0;
+    }
+
+    // ── Internal block layout (relative to content area) ──
+    let mut inner = Dimensions::default();
+    let content_x = match side {
+        FloatSide::Left => {
+            let avail = float_context.available_rect(y, 1.0, container);
+            avail.x + margin_left + border_left + padding_left
+        }
+        FloatSide::Right => {
+            let avail = float_context.available_rect(y, 1.0, container);
+            avail.x + avail.width - margin_right - border_right - padding_right - content_width
+        }
+    };
+    inner.content.x = content_x;
+    inner.content.y = y + margin_top + border_top + padding_top;
+    inner.content.width = content_width;
+    layout_block(layout_box, &inner);
+
+    let content_height = layout_box.dimensions.content.height;
+
+    // ── Register in float context ──
+    let outer_x = content_x - margin_left - border_left - padding_left;
+    let outer_y = y;
+    let outer_height = content_height
+        + padding_top + padding_bottom
+        + border_top + border_bottom
+        + margin_top + margin_bottom;
+
+    float_context.floats.push((Rect {
+        x: outer_x,
+        y: outer_y,
+        width: outer_width,
+        height: outer_height,
+    }, side));
+
+    // ── Store final dimensions ──
+    layout_box.dimensions.content.x = content_x;
+    layout_box.dimensions.content.y = y + margin_top + border_top + padding_top;
+    layout_box.dimensions.content.width = content_width;
+    layout_box.dimensions.content.height = content_height;
+    layout_box.dimensions.margin = EdgeSizes {
+        top: margin_top, right: margin_right, bottom: margin_bottom, left: margin_left,
+    };
+    layout_box.dimensions.padding = EdgeSizes {
+        top: padding_top, right: padding_right, bottom: padding_bottom, left: padding_left,
+    };
+    layout_box.dimensions.border = EdgeSizes {
+        top: border_top, right: border_right, bottom: border_bottom, left: border_left,
+    };
 }
 
 /// Estimate text height based on character count and container width
@@ -628,7 +866,8 @@ pub fn print_layout_box(layout_box: &LayoutBox, indent: usize) {
     let spaces = "  ".repeat(indent);
 
     match &layout_box.box_type {
-        BoxType::BlockNode(styled) | BoxType::InlineNode(styled) | BoxType::InlineBlockNode(styled) => {
+        BoxType::BlockNode(styled) | BoxType::InlineNode(styled) | BoxType::InlineBlockNode(styled)
+        | BoxType::FloatLeftNode(styled) | BoxType::FloatRightNode(styled) => {
             if let Node::Element(el) = &styled.node {
                 println!(
                     "{}<{}> x={:.0} y={:.0} w={:.0} h={:.0}",
@@ -950,14 +1189,92 @@ mod tests {
     }
 
     #[test]
-    fn test_layout_percentage_width() {
-        let mut styles = HashMap::new();
-        styles.insert("width".to_string(), "50%".to_string());
+    fn test_float_left_basic() {
+        let mut float_styles = HashMap::new();
+        float_styles.insert("float".to_string(), "left".to_string());
+        float_styles.insert("width".to_string(), "200px".to_string());
+        float_styles.insert("height".to_string(), "100px".to_string());
+        let float_box = styled_element("div", float_styles, vec![]);
 
-        let styled = styled_element("div", styles, vec![]);
-        let mut root = build_layout_tree(&styled);
+        let parent = styled_element("div", HashMap::new(), vec![float_box]);
+        let mut root = build_layout_tree(&parent);
         layout(&mut root, viewport());
 
-        assert_eq!(root.dimensions.content.width, 400.0);
+        let float_child = &root.children[0];
+        assert!(matches!(float_child.box_type, BoxType::FloatLeftNode(_)));
+        assert_eq!(float_child.dimensions.content.x, 0.0);
+        assert_eq!(float_child.dimensions.content.y, 0.0);
+        assert_eq!(float_child.dimensions.content.width, 200.0);
+        assert_eq!(float_child.dimensions.content.height, 100.0);
+    }
+
+    #[test]
+    fn test_float_right_basic() {
+        let mut float_styles = HashMap::new();
+        float_styles.insert("float".to_string(), "right".to_string());
+        float_styles.insert("width".to_string(), "200px".to_string());
+        float_styles.insert("height".to_string(), "100px".to_string());
+        let float_box = styled_element("div", float_styles, vec![]);
+
+        let parent = styled_element("div", HashMap::new(), vec![float_box]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let float_child = &root.children[0];
+        assert!(matches!(float_child.box_type, BoxType::FloatRightNode(_)));
+        assert_eq!(float_child.dimensions.content.x, 800.0 - 200.0);
+        assert_eq!(float_child.dimensions.content.y, 0.0);
+        assert_eq!(float_child.dimensions.content.width, 200.0);
+        assert_eq!(float_child.dimensions.content.height, 100.0);
+    }
+
+    #[test]
+    fn test_two_floats_left() {
+        let mut f1 = HashMap::new();
+        f1.insert("float".to_string(), "left".to_string());
+        f1.insert("width".to_string(), "200px".to_string());
+        f1.insert("height".to_string(), "100px".to_string());
+
+        let mut f2 = HashMap::new();
+        f2.insert("float".to_string(), "left".to_string());
+        f2.insert("width".to_string(), "200px".to_string());
+        f2.insert("height".to_string(), "100px".to_string());
+
+        let parent = styled_element("div", HashMap::new(), vec![
+            styled_element("div", f1, vec![]),
+            styled_element("div", f2, vec![]),
+        ]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let first = &root.children[0];
+        let second = &root.children[1];
+
+        // First float at left edge
+        assert_eq!(first.dimensions.content.x, 0.0);
+        // Second float should be placed to the right of the first
+        assert_eq!(second.dimensions.content.x, 200.0);
+    }
+
+    #[test]
+    fn test_clear_both() {
+        let mut float_styles = HashMap::new();
+        float_styles.insert("float".to_string(), "left".to_string());
+        float_styles.insert("width".to_string(), "200px".to_string());
+        float_styles.insert("height".to_string(), "100px".to_string());
+        let float_box = styled_element("div", float_styles, vec![]);
+
+        let mut clear_styles = HashMap::new();
+        clear_styles.insert("clear".to_string(), "both".to_string());
+        clear_styles.insert("height".to_string(), "50px".to_string());
+        let clear_box = styled_element("div", clear_styles, vec![]);
+
+        let parent = styled_element("div", HashMap::new(), vec![float_box, clear_box]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let clear_child = &root.children[1];
+        // Clear child should be placed below the float (y >= 100)
+        assert_eq!(clear_child.dimensions.content.y, 100.0);
     }
 }
