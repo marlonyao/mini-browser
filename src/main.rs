@@ -124,11 +124,19 @@ impl eframe::App for BrowserApp {
                         .hint_text("https://example.com"),
                 );
                 let go_clicked = ui.button(if self.loading { "⏳" } else { "Go" }).clicked();
-                let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                let has_focus = response.has_focus();
-                println!("[ui] go_clicked={} enter_pressed={} has_focus={} loading={}", go_clicked, enter_pressed, has_focus, self.loading);
-                if (go_clicked || (enter_pressed && has_focus)) && !self.loading {
-                    println!("[ui] Triggering load_page for: {}", self.url);
+                // Use ctx-level consume_key for reliable Enter detection
+                let enter_pressed = ctx.input(|i| {
+                    i.events.iter().any(|e| {
+                        if let egui::Event::Key { key, pressed, .. } = e {
+                            *key == egui::Key::Enter && *pressed
+                        } else {
+                            false
+                        }
+                    })
+                });
+                println!("[ui] go={} enter={} url='{}'", go_clicked, enter_pressed, self.url);
+                if (go_clicked || enter_pressed) && !self.loading && !self.url.is_empty() {
+                    println!("[ui] >>> TRIGGERING LOAD <<<");
                     self.load_page();
                 }
             });
