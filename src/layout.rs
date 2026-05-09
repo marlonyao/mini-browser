@@ -81,6 +81,7 @@ pub enum BoxType {
     FloatLeftNode(StyledNode),   // 新增
     FloatRightNode(StyledNode),  // 新增
     AbsoluteNode(StyledNode),    // 新增
+    FlexNode(StyledNode),        // 新增
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -115,6 +116,7 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
                     _ => match display {
                         Some("inline") => BoxType::InlineNode(styled.clone()),
                         Some("inline-block") => BoxType::InlineBlockNode(styled.clone()),
+                        Some("flex") => BoxType::FlexNode(styled.clone()),
                         _ => BoxType::BlockNode(styled.clone()),
                     },
                 },
@@ -175,6 +177,9 @@ pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
         BoxType::BlockNode(_) | BoxType::InlineBlockNode(_) => {
             layout_block(layout_box, &containing_block);
         }
+        BoxType::FlexNode(_) => {
+            layout_flex(layout_box, &containing_block);
+        }
         BoxType::AnonymousBlock => {
             layout_inline_block(layout_box, &containing_block, &mut FloatContext::default());
         }
@@ -198,7 +203,7 @@ fn apply_relative_offset(layout_box: &mut LayoutBox, containing_block: &Dimensio
     let styled = match &layout_box.box_type {
         BoxType::BlockNode(s) | BoxType::InlineNode(s) | BoxType::InlineBlockNode(s)
         | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s)
-        | BoxType::AbsoluteNode(s) => Some(s.clone()),
+        | BoxType::AbsoluteNode(s) | BoxType::FlexNode(s) => Some(s.clone()),
         BoxType::AnonymousBlock => None,
     };
 
@@ -525,7 +530,8 @@ fn compute_vertical_margins(layout_box: &LayoutBox, container_width: f32) -> (f3
         | BoxType::InlineBlockNode(styled)
         | BoxType::FloatLeftNode(styled)
         | BoxType::FloatRightNode(styled)
-        | BoxType::AbsoluteNode(styled) => {
+        | BoxType::AbsoluteNode(styled)
+        | BoxType::FlexNode(styled) => {
             let top = get_length(Some(styled), "margin-top", container_width);
             let bottom = get_length(Some(styled), "margin-bottom", container_width);
             (top, bottom)
@@ -538,7 +544,7 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     let styled = match &layout_box.box_type {
         BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s)
         | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s)
-        | BoxType::AbsoluteNode(s) => Some(s.clone()),
+        | BoxType::AbsoluteNode(s) | BoxType::FlexNode(s) => Some(s.clone()),
         BoxType::AnonymousBlock => None,
     };
 
@@ -620,7 +626,7 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
 
     for child in &mut layout_box.children {
         if matches!(child.box_type, BoxType::FloatLeftNode(_) | BoxType::FloatRightNode(_)
-            | BoxType::AbsoluteNode(_)) {
+            | BoxType::AbsoluteNode(_) | BoxType::FlexNode(_)) {
             continue;
         }
 
@@ -1003,6 +1009,292 @@ fn layout_absolute(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     };
 }
 
+/// Layout a flex container.
+/// Computes the container's own dimensions (margin/border/padding/width/height)
+/// just like a block, then arranges children along the main axis using flex rules.
+fn layout_flex(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
+    // ── Phase 1: compute container box like a block ──
+    let styled = match &layout_box.box_type {
+        BoxType::FlexNode(s) => Some(s.clone()),
+        _ => return,
+    };
+
+    let box_sizing = get_box_sizing(styled.as_ref());
+
+    let margin_left = get_length(styled.as_ref(), "margin-left", containing_block.content.width);
+    let margin_right = get_length(styled.as_ref(), "margin-right", containing_block.content.width);
+    let padding_left = get_length(styled.as_ref(), "padding-left", containing_block.content.width);
+    let padding_right = get_length(styled.as_ref(), "padding-right", containing_block.content.width);
+    let border_left = get_length(styled.as_ref(), "border-left", containing_block.content.width);
+    let border_right = get_length(styled.as_ref(), "border-right", containing_block.content.width);
+
+    let total_horizontal = margin_left + border_left + padding_left + padding_right + border_right + margin_right;
+
+    let explicit_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("width"))
+        .map(|v| parse_length_percent(v, containing_block.content.width));
+
+    let mut content_width = match (explicit_width, box_sizing) {
+        (Some(w), "border-box") => (w - border_left - padding_left - padding_right - border_right).max(0.0),
+        (Some(w), _) => w,
+        (None, _) => (containing_block.content.width - total_horizontal).max(0.0),
+    };
+
+    let min_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("min-width"))
+        .map(|v| parse_length_percent(v, containing_block.content.width))
+        .unwrap_or(0.0);
+    let max_width = styled.as_ref()
+        .and_then(|s| s.specified_values.get("max-width"))
+        .map(|v| parse_length_percent(v, containing_block.content.width))
+        .unwrap_or(f32::INFINITY);
+    content_width = content_width.clamp(min_width, max_width);
+
+    let margin_top = get_length(styled.as_ref(), "margin-top", containing_block.content.width);
+    let margin_bottom = get_length(styled.as_ref(), "margin-bottom", containing_block.content.width);
+    let padding_top = get_length(styled.as_ref(), "padding-top", containing_block.content.width);
+    let padding_bottom = get_length(styled.as_ref(), "padding-bottom", containing_block.content.width);
+    let border_top = get_length(styled.as_ref(), "border-top", containing_block.content.width);
+    let border_bottom = get_length(styled.as_ref(), "border-bottom", containing_block.content.width);
+
+    let total_vertical = margin_top + border_top + padding_top + padding_bottom + border_bottom + margin_bottom;
+
+    let explicit_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("height"))
+        .map(|v| parse_length_percent(v, containing_block.content.height));
+
+    let mut content_height = match (explicit_height, box_sizing) {
+        (Some(h), "border-box") => (h - border_top - padding_top - padding_bottom - border_bottom).max(0.0),
+        (Some(h), _) => h,
+        (None, _) => 0.0, // resolved from children or auto
+    };
+
+    let min_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("min-height"))
+        .map(|v| parse_length_percent(v, containing_block.content.height))
+        .unwrap_or(0.0);
+    let max_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("max-height"))
+        .map(|v| parse_length_percent(v, containing_block.content.height))
+        .unwrap_or(f32::INFINITY);
+    content_height = content_height.clamp(min_height, max_height);
+
+    layout_box.dimensions.content.x = containing_block.content.x + margin_left + border_left + padding_left;
+    layout_box.dimensions.content.y = containing_block.content.y + margin_top + border_top + padding_top;
+    layout_box.dimensions.content.width = content_width;
+    layout_box.dimensions.content.height = content_height;
+    layout_box.dimensions.margin = EdgeSizes {
+        top: margin_top, right: margin_right, bottom: margin_bottom, left: margin_left,
+    };
+    layout_box.dimensions.padding = EdgeSizes {
+        top: padding_top, right: padding_right, bottom: padding_bottom, left: padding_left,
+    };
+    layout_box.dimensions.border = EdgeSizes {
+        top: border_top, right: border_right, bottom: border_bottom, left: border_left,
+    };
+
+    // ── Phase 2: read flex properties ──
+    let flex_direction = styled.as_ref()
+        .and_then(|s| s.specified_values.get("flex-direction"))
+        .map(|v| v.as_str())
+        .unwrap_or("row");
+    let justify_content = styled.as_ref()
+        .and_then(|s| s.specified_values.get("justify-content"))
+        .map(|v| v.as_str())
+        .unwrap_or("flex-start");
+    let align_items = styled.as_ref()
+        .and_then(|s| s.specified_values.get("align-items"))
+        .map(|v| v.as_str())
+        .unwrap_or("stretch");
+
+    let is_row = flex_direction == "row" || flex_direction == "row-reverse";
+    let reverse = flex_direction == "row-reverse" || flex_direction == "column-reverse";
+
+    // ── Phase 3: measure each flex item ──
+    let mut item_infos: Vec<(usize, f32, f32, f32)> = Vec::new(); // (index, basis, grow, shrink)
+    let mut total_basis = 0.0f32;
+
+    for (i, child) in layout_box.children.iter_mut().enumerate() {
+        let child_styled = match &child.box_type {
+            BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s)
+            | BoxType::FlexNode(s) | BoxType::AbsoluteNode(s) => Some(s.clone()),
+            _ => None,
+        };
+
+        // Determine flex-basis (simplified: auto → width for row, height for column)
+        let basis = child_styled.as_ref()
+            .and_then(|s| s.specified_values.get("flex-basis"))
+            .map(|v| parse_length_percent(v, if is_row { content_width } else { content_height }))
+            .unwrap_or_else(|| {
+                if is_row {
+                    child_styled.as_ref()
+                        .and_then(|s| s.specified_values.get("width"))
+                        .map(|v| parse_length_percent(v, content_width))
+                        .unwrap_or(0.0)
+                } else {
+                    child_styled.as_ref()
+                        .and_then(|s| s.specified_values.get("height"))
+                        .map(|v| parse_length_percent(v, content_height))
+                        .unwrap_or(0.0)
+                }
+            });
+
+        let grow = child_styled.as_ref()
+            .and_then(|s| s.specified_values.get("flex-grow"))
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(0.0);
+        let shrink = child_styled.as_ref()
+            .and_then(|s| s.specified_values.get("flex-shrink"))
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(1.0);
+
+        item_infos.push((i, basis, grow, shrink));
+        total_basis += basis;
+    }
+
+    // ── Phase 4: distribute remaining/deficit space ──
+    let main_size = if is_row { content_width } else { content_height };
+    let remaining = main_size - total_basis;
+
+    let mut final_sizes: Vec<f32> = item_infos.iter().map(|(_, basis, _, _)| *basis).collect();
+    let total_grow: f32 = item_infos.iter().map(|(_, _, grow, _)| *grow).sum();
+
+    if remaining > 0.0 {
+        // Positive remaining → flex-grow
+        if total_grow > 0.0 {
+            let unit = remaining / total_grow;
+            for (i, (_, _, grow, _)) in item_infos.iter().enumerate() {
+                final_sizes[i] += unit * grow;
+            }
+        } else {
+            // No growers → items stay at basis, justify-content handles the rest
+        }
+    } else if remaining < 0.0 {
+        // Deficit → flex-shrink
+        let total_shrink: f32 = item_infos.iter().map(|(_, basis, _, shrink)| shrink * basis).sum();
+        if total_shrink > 0.0 {
+            let unit = (-remaining) / total_shrink;
+            for (i, (_, basis, _, shrink)) in item_infos.iter().enumerate() {
+                final_sizes[i] = (basis - unit * shrink * basis).max(0.0);
+            }
+        }
+    }
+
+    // ── Phase 5: position items along main axis ──
+    let mut main_offset = 0.0f32;
+    let total_final: f32 = final_sizes.iter().sum();
+    let gap = if remaining > 0.0 && total_grow == 0.0 {
+        match justify_content {
+            "space-between" => if final_sizes.len() > 1 { remaining / (final_sizes.len() - 1) as f32 } else { 0.0 },
+            "center" => remaining / 2.0,
+            "flex-end" => remaining,
+            _ => 0.0,
+        }
+    } else {
+        0.0
+    };
+
+    let (cross_size, cross_pos) = if is_row {
+        (content_height, layout_box.dimensions.content.y)
+    } else {
+        (content_width, layout_box.dimensions.content.x)
+    };
+
+    for (idx, (i, _, _, _)) in item_infos.iter().enumerate() {
+        let child = &mut layout_box.children[*i];
+        let size = final_sizes[idx];
+
+        // Main-axis position
+        let main_pos = if is_row {
+            layout_box.dimensions.content.x + main_offset + gap
+        } else {
+            layout_box.dimensions.content.y + main_offset + gap
+        };
+
+        // Cross-axis size and position
+        let child_styled = match &child.box_type {
+            BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s)
+            | BoxType::FlexNode(s) | BoxType::AbsoluteNode(s) => Some(s.clone()),
+            _ => None,
+        };
+
+        let align = child_styled.as_ref()
+            .and_then(|s| s.specified_values.get("align-self"))
+            .map(|v| v.as_str())
+            .unwrap_or(align_items);
+
+        let cross_size_for_child = if is_row {
+            child_styled.as_ref()
+                .and_then(|s| s.specified_values.get("height"))
+                .map(|v| parse_length_percent(v, content_height))
+                .unwrap_or(if align == "stretch" { content_height } else { 0.0 })
+        } else {
+            child_styled.as_ref()
+                .and_then(|s| s.specified_values.get("width"))
+                .map(|v| parse_length_percent(v, content_width))
+                .unwrap_or(if align == "stretch" { content_width } else { 0.0 })
+        };
+
+        let cross_pos_for_child = match align {
+            "flex-end" => cross_pos + cross_size - cross_size_for_child,
+            "center" => cross_pos + (cross_size - cross_size_for_child) / 2.0,
+            _ => cross_pos, // flex-start / stretch baseline
+        };
+
+        // Build containing block for child
+        let mut child_containing = Dimensions::default();
+        if is_row {
+            child_containing.content.x = main_pos;
+            child_containing.content.y = cross_pos_for_child;
+            child_containing.content.width = size;
+            child_containing.content.height = cross_size_for_child;
+        } else {
+            child_containing.content.x = cross_pos_for_child;
+            child_containing.content.y = main_pos;
+            child_containing.content.width = cross_size_for_child;
+            child_containing.content.height = size;
+        }
+
+        // Remove explicit main-axis size so child layout uses the flex-assigned size
+        // from the containing block instead of its own CSS width/height.
+        match &mut child.box_type {
+            BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s)
+            | BoxType::FlexNode(s) | BoxType::AbsoluteNode(s) => {
+                if is_row {
+                    s.specified_values.remove("width");
+                } else {
+                    s.specified_values.remove("height");
+                }
+            }
+            _ => {}
+        }
+
+        layout(child, child_containing);
+
+        main_offset += size;
+        if justify_content == "space-between" && total_grow == 0.0 && remaining > 0.0 && idx < final_sizes.len() - 1 {
+            main_offset += gap;
+        }
+    }
+
+    // ── Phase 6: auto height for flex container ──
+    if explicit_height.is_none() {
+        let max_child_cross = layout_box.children.iter()
+            .map(|c| if is_row {
+                c.dimensions.content.y + c.dimensions.content.height + c.dimensions.padding.bottom + c.dimensions.border.bottom
+            } else {
+                c.dimensions.content.x + c.dimensions.content.width + c.dimensions.padding.right + c.dimensions.border.right
+            })
+            .fold(0.0f32, f32::max);
+        let new_cross = (max_child_cross - cross_pos).max(0.0);
+        if is_row {
+            layout_box.dimensions.content.height = new_cross.clamp(min_height, max_height);
+        } else {
+            layout_box.dimensions.content.width = new_cross.clamp(min_width, max_width);
+        }
+    }
+}
+
 /// Estimate text height based on character count and container width
 fn measure_text_height(styled: &StyledNode, container_width: f32) -> f32 {
     let font_size = 16.0f32;
@@ -1071,7 +1363,7 @@ pub fn print_layout_box(layout_box: &LayoutBox, indent: usize) {
     match &layout_box.box_type {
         BoxType::BlockNode(styled) | BoxType::InlineNode(styled) | BoxType::InlineBlockNode(styled)
         | BoxType::FloatLeftNode(styled) | BoxType::FloatRightNode(styled)
-        | BoxType::AbsoluteNode(styled) => {
+        | BoxType::AbsoluteNode(styled) | BoxType::FlexNode(styled) => {
             if let Node::Element(el) = &styled.node {
                 println!(
                     "{}<{}> x={:.0} y={:.0} w={:.0} h={:.0}",
@@ -1592,5 +1884,140 @@ mod tests {
         assert_eq!(child_box.dimensions.content.x, 670.0);
         // Parent content height = 500, bottom=20, height=50 => y = 500 - 20 - 50 = 430
         assert_eq!(child_box.dimensions.content.y, 430.0);
+    }
+
+    // ── Flex tests ─────────────────────────────────────
+
+    #[test]
+    fn test_flex_row_basic() {
+        let mut flex_styles = HashMap::new();
+        flex_styles.insert("display".to_string(), "flex".to_string());
+        flex_styles.insert("width".to_string(), "600px".to_string());
+        flex_styles.insert("height".to_string(), "200px".to_string());
+
+        let mut c1 = HashMap::new();
+        c1.insert("width".to_string(), "100px".to_string());
+        c1.insert("height".to_string(), "50px".to_string());
+
+        let mut c2 = HashMap::new();
+        c2.insert("width".to_string(), "150px".to_string());
+        c2.insert("height".to_string(), "50px".to_string());
+
+        let parent = styled_element("div", flex_styles, vec![
+            styled_element("div", c1, vec![]),
+            styled_element("div", c2, vec![]),
+        ]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        assert!(matches!(root.box_type, BoxType::FlexNode(_)));
+        let child1 = &root.children[0];
+        let child2 = &root.children[1];
+        // Row layout: child1 at x=0, child2 at x=100
+        assert_eq!(child1.dimensions.content.x, 0.0);
+        assert_eq!(child2.dimensions.content.x, 100.0);
+    }
+
+    #[test]
+    fn test_flex_row_center() {
+        let mut flex_styles = HashMap::new();
+        flex_styles.insert("display".to_string(), "flex".to_string());
+        flex_styles.insert("width".to_string(), "600px".to_string());
+        flex_styles.insert("justify-content".to_string(), "center".to_string());
+
+        let mut c1 = HashMap::new();
+        c1.insert("width".to_string(), "100px".to_string());
+        c1.insert("height".to_string(), "50px".to_string());
+
+        let parent = styled_element("div", flex_styles, vec![
+            styled_element("div", c1, vec![]),
+        ]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child = &root.children[0];
+        // Center in 600px container with 100px child => x = (600-100)/2 = 250
+        assert_eq!(child.dimensions.content.x, 250.0);
+    }
+
+    #[test]
+    fn test_flex_column() {
+        let mut flex_styles = HashMap::new();
+        flex_styles.insert("display".to_string(), "flex".to_string());
+        flex_styles.insert("flex-direction".to_string(), "column".to_string());
+        flex_styles.insert("width".to_string(), "400px".to_string());
+        flex_styles.insert("height".to_string(), "300px".to_string());
+
+        let mut c1 = HashMap::new();
+        c1.insert("height".to_string(), "50px".to_string());
+
+        let mut c2 = HashMap::new();
+        c2.insert("height".to_string(), "80px".to_string());
+
+        let parent = styled_element("div", flex_styles, vec![
+            styled_element("div", c1, vec![]),
+            styled_element("div", c2, vec![]),
+        ]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child1 = &root.children[0];
+        let child2 = &root.children[1];
+        // Column layout: child1 at y=0, child2 at y=50
+        assert_eq!(child1.dimensions.content.y, 0.0);
+        assert_eq!(child2.dimensions.content.y, 50.0);
+    }
+
+    #[test]
+    fn test_flex_grow() {
+        let mut flex_styles = HashMap::new();
+        flex_styles.insert("display".to_string(), "flex".to_string());
+        flex_styles.insert("width".to_string(), "500px".to_string());
+
+        let mut c1 = HashMap::new();
+        c1.insert("width".to_string(), "100px".to_string());
+        c1.insert("flex-grow".to_string(), "1".to_string());
+        c1.insert("height".to_string(), "50px".to_string());
+
+        let mut c2 = HashMap::new();
+        c2.insert("width".to_string(), "100px".to_string());
+        c2.insert("height".to_string(), "50px".to_string());
+
+        let parent = styled_element("div", flex_styles, vec![
+            styled_element("div", c1, vec![]),
+            styled_element("div", c2, vec![]),
+        ]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child1 = &root.children[0];
+        let child2 = &root.children[1];
+        // child1 grows to fill remaining 300px => width = 400px
+        assert_eq!(child1.dimensions.content.width, 400.0);
+        // child2 stays at 100px
+        assert_eq!(child2.dimensions.content.width, 100.0);
+    }
+
+    #[test]
+    fn test_flex_align_items_center() {
+        let mut flex_styles = HashMap::new();
+        flex_styles.insert("display".to_string(), "flex".to_string());
+        flex_styles.insert("width".to_string(), "400px".to_string());
+        flex_styles.insert("height".to_string(), "200px".to_string());
+        flex_styles.insert("align-items".to_string(), "center".to_string());
+
+        let mut c1 = HashMap::new();
+        c1.insert("width".to_string(), "100px".to_string());
+        c1.insert("height".to_string(), "50px".to_string());
+
+        let parent = styled_element("div", flex_styles, vec![
+            styled_element("div", c1, vec![]),
+        ]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child = &root.children[0];
+        // Center vertically in 200px container with 50px child => y = (200-50)/2 = 75
+        assert_eq!(child.dimensions.content.y, 75.0);
     }
 }
