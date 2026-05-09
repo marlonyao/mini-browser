@@ -124,9 +124,11 @@ impl eframe::App for BrowserApp {
                         .hint_text("https://example.com"),
                 );
                 let go_clicked = ui.button(if self.loading { "⏳" } else { "Go" }).clicked();
-                let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter))
-                    && response.has_focus();
-                if (go_clicked || enter_pressed) && !self.loading {
+                let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let has_focus = response.has_focus();
+                println!("[ui] go_clicked={} enter_pressed={} has_focus={} loading={}", go_clicked, enter_pressed, has_focus, self.loading);
+                if (go_clicked || (enter_pressed && has_focus)) && !self.loading {
+                    println!("[ui] Triggering load_page for: {}", self.url);
                     self.load_page();
                 }
             });
@@ -161,19 +163,23 @@ impl eframe::App for BrowserApp {
 impl BrowserApp {
     fn load_page(&mut self) {
         let url = self.url.trim().to_string();
+        println!("[load_page] called with url='{}'", url);
         if url.is_empty() {
+            println!("[load_page] url is empty, returning");
             return;
         }
 
         self.loading = true;
         self.error = None;
         self.page = None;
+        println!("[load_page] loading set to true");
 
         let result_arc = Arc::new(Mutex::new(None));
         self.fetch_result = Some(result_arc.clone());
         let ctx = self.ctx_ref.clone();
 
         std::thread::spawn(move || {
+            println!("[thread] starting fetch_and_render");
             let result = fetch_and_render(&url);
             {
                 let mut guard = result_arc.lock().unwrap();
@@ -183,6 +189,7 @@ impl BrowserApp {
             if let Some(ctx) = ctx {
                 ctx.request_repaint();
             }
+            println!("[thread] fetch_and_render done, requested repaint");
         });
     }
 
@@ -288,8 +295,23 @@ fn fetch_and_render(url: &str) -> FetchResult {
         std::fs::read_to_string(path).map_err(|e| e.to_string())
     } else if url.starts_with("http://") || url.starts_with("https://") {
         match mini_browser::network::url::Url::parse(url) {
-            Ok(parsed) => mini_browser::network::fetch(&parsed).map_err(|e| e.to_string()),
-            Err(e) => Err(e.to_string()),
+            Ok(parsed) => {
+                eprintln!("[fetch] URL parsed: {}://{}:{}{}", parsed.scheme, parsed.host, parsed.port, parsed.path);
+                match mini_browser::network::fetch(&parsed) {
+                    Ok(html) => {
+                        eprintln!("[fetch] HTML fetched: {} bytes", html.len());
+                        Ok(html)
+                    }
+                    Err(e) => {
+                        eprintln!("[fetch] Network error: {}", e);
+                        Err(e.to_string())
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[fetch] URL parse error: {}", e);
+                Err(e.to_string())
+            }
         }
     } else {
         // Treat as file path
@@ -298,28 +320,37 @@ fn fetch_and_render(url: &str) -> FetchResult {
 
     match html_result {
         Ok(html) => {
+            eprintln!("[render] HTML length: {}", html.len());
             let dom = parse_html(&html);
+            eprintln!("[render] DOM parsed: {:?}", dom);
 
             // Extract stylesheets (inline + external)
             let mut stylesheet = Stylesheet { rules: Vec::new() };
             collect_styles(&dom, &mut stylesheet, url);
+            eprintln!("[render] Stylesheet rules: {}", stylesheet.rules.len());
 
             // Merge UA default styles (lowest specificity)
             mini_browser::style::merge_default_styles(&mut stylesheet);
+            eprintln!("[render] After merge: {} rules", stylesheet.rules.len());
 
             // Build styled tree
             let styled = style_tree(&dom, &stylesheet);
+            eprintln!("[render] Styled tree built");
 
             // Build layout tree
             let mut layout_root = build_layout_tree(&styled);
+            eprintln!("[render] Layout tree built, children: {}", layout_root.children.len());
+
             let viewport = Dimensions {
                 content: Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 },
                 ..Dimensions::default()
             };
             layout(&mut layout_root, viewport);
+            eprintln!("[render] Layout computed");
 
             // Build display list
             let display_list = mini_browser::paint::build_display_list(&layout_root);
+            eprintln!("[render] Display list: {} items", display_list.len());
 
             // Calculate total content height
             let content_height = display_list.iter().map(|cmd| match cmd {
