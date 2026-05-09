@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Mini Browser Layout Report</title>
+<style>
+body { font-family: monospace; margin: 20px; }
+table { border-collapse: collapse; margin: 20px 0; }
+th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+th { background: #f0f0f0; }
+.canvas { position: relative; width: 800px; height: 600px; border: 2px solid #333; background: white; margin: 20px 0; }
+.box { position: absolute; box-sizing: border-box; }
+.text { position: absolute; white-space: nowrap; overflow: hidden; }
+</style></head><body>
+<h1>Mini Browser Layout Report</h1>
+<h2>Source HTML</h2>
+<pre>&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;body style=&quot;margin: 0; font-family: sans-serif;&quot;&gt;
+  &lt;!-- Header: Fixed navbar --&gt;
+  &lt;div style=&quot;position: fixed; top: 0; left: 0; width: 100%; height: 50px; background: #2c3e50; color: white; z-index: 100;&quot;&gt;
+    &lt;span style=&quot;display: inline-block; padding: 15px;&quot;&gt;Fixed Navbar&lt;/span&gt;
+  &lt;/div&gt;
+
+  &lt;!-- Main container --&gt;
+  &lt;div style=&quot;margin-top: 60px; padding: 20px; width: 760px;&quot;&gt;
+    
+    &lt;!-- Float section --&gt;
+    &lt;div style=&quot;float: left; width: 200px; height: 150px; background: #e74c3c; margin-right: 20px;&quot;&gt;
+      Float Left
+    &lt;/div&gt;
+    
+    &lt;!-- Inline text wrapping around float --&gt;
+    &lt;p style=&quot;margin: 0;&quot;&gt;
+      This text flows around the red float box on the left. 
+      The float is 200px wide with a 20px right margin.
+    &lt;/p&gt;
+    
+    &lt;!-- Clear after float --&gt;
+    &lt;div style=&quot;clear: both; height: 10px;&quot;&gt;&lt;/div&gt;
+    
+    &lt;!-- Relative offset box --&gt;
+    &lt;div style=&quot;position: relative; left: 30px; top: 10px; width: 300px; height: 80px; background: #3498db; color: white;&quot;&gt;
+      Relative: offset 30px left, 10px down
+    &lt;/div&gt;
+    
+    &lt;!-- Absolute positioned inside a positioned container --&gt;
+    &lt;div style=&quot;position: relative; width: 400px; height: 200px; background: #ecf0f1; margin-top: 30px;&quot;&gt;
+      Positioned container
+      &lt;div style=&quot;position: absolute; top: 20px; right: 20px; width: 100px; height: 50px; background: #9b59b6; color: white;&quot;&gt;
+        Absolute
+      &lt;/div&gt;
+    &lt;/div&gt;
+    
+    &lt;!-- Flex container --&gt;
+    &lt;div style=&quot;display: flex; flex-direction: row; justify-content: space-between; align-items: center; width: 100%; height: 100px; background: #f39c12; margin-top: 20px;&quot;&gt;
+      &lt;div style=&quot;width: 80px; height: 60px; background: #e67e22;&quot;&gt;Flex 1&lt;/div&gt;
+      &lt;div style=&quot;width: 80px; height: 60px; background: #d35400;&quot;&gt;Flex 2&lt;/div&gt;
+      &lt;div style=&quot;width: 80px; height: 60px; background: #e67e22;&quot;&gt;Flex 3&lt;/div&gt;
+    &lt;/div&gt;
+    
+    &lt;!-- Inline-block elements in a row --&gt;
+    &lt;div style=&quot;margin-top: 20px;&quot;&gt;
+      &lt;span style=&quot;display: inline-block; width: 100px; height: 40px; background: #1abc9c;&quot;&gt;IB 1&lt;/span&gt;
+      &lt;span style=&quot;display: inline-block; width: 100px; height: 40px; background: #16a085;&quot;&gt;IB 2&lt;/span&gt;
+      &lt;span style=&quot;display: inline-block; width: 100px; height: 40px; background: #1abc9c;&quot;&gt;IB 3&lt;/span&gt;
+    &lt;/div&gt;
+    
+  &lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;</pre>
+<h2>Rendered Output</h2>
+<div class="canvas">
+<div class="box" style="left:0px;top:0px;width:800px;height:50px;background:rgb(44,62,80);"></div>
+<div class="text" style="left:0px;top:0px;width:96px;height:19.2px;color:rgb(0,0,0);font-size:19.2px;display:flex;align-items:center;">Fixed Navbar</div>
+<div class="box" style="left:0px;top:60px;width:200px;height:150px;background:rgb(231,76,60);"></div>
+<div class="text" style="left:0px;top:60px;width:80px;height:19.199997px;color:rgb(0,0,0);font-size:19.199997px;display:flex;align-items:center;">Float Left</div>
+<div class="text" style="left:0px;top:60px;width:728px;height:19.199997px;color:rgb(0,0,0);font-size:19.199997px;display:flex;align-items:center;">This text flows around the red float box on the left. 
+      The float is 200px wide with a</div>
+<div class="text" style="left:0px;top:79.2px;width:144px;height:19.199997px;color:rgb(0,0,0);font-size:19.199997px;display:flex;align-items:center;">20px right margin.</div>
+<div class="box" style="left:30px;top:230px;width:300px;height:80px;background:rgb(52,152,219);"></div>
+<div class="text" style="left:30px;top:230px;width:296px;height:19.199997px;color:rgb(255,255,255);font-size:19.199997px;display:flex;align-items:center;">Relative: offset 30px left, 10px down</div>
+<div class="box" style="left:0px;top:340px;width:400px;height:200px;background:rgb(236,240,241);"></div>
+<div class="box" style="left:280px;top:360px;width:100px;height:50px;background:rgb(155,89,182);"></div>
+<div class="text" style="left:280px;top:360px;width:64px;height:19.200012px;color:rgb(255,255,255);font-size:19.200012px;display:flex;align-items:center;">Absolute</div>
+<div class="text" style="left:0px;top:340px;width:160px;height:19.200012px;color:rgb(0,0,0);font-size:19.200012px;display:flex;align-items:center;">Positioned container</div>
+<div class="box" style="left:0px;top:560px;width:760px;height:100px;background:rgb(243,156,18);"></div>
+<div class="box" style="left:0px;top:580px;width:80px;height:60px;background:rgb(230,126,34);"></div>
+<div class="text" style="left:0px;top:580px;width:48px;height:19.200012px;color:rgb(0,0,0);font-size:19.200012px;display:flex;align-items:center;">Flex 1</div>
+<div class="box" style="left:340px;top:580px;width:80px;height:60px;background:rgb(211,84,0);"></div>
+<div class="text" style="left:340px;top:580px;width:48px;height:19.200012px;color:rgb(0,0,0);font-size:19.200012px;display:flex;align-items:center;">Flex 2</div>
+<div class="box" style="left:680px;top:580px;width:80px;height:60px;background:rgb(230,126,34);"></div>
+<div class="text" style="left:680px;top:580px;width:48px;height:19.200012px;color:rgb(0,0,0);font-size:19.200012px;display:flex;align-items:center;">Flex 3</div>
+<div class="box" style="left:0px;top:680px;width:100px;height:40px;background:rgb(26,188,156);"></div>
+<div class="text" style="left:0px;top:680px;width:32px;height:19.200012px;color:rgb(0,0,0);font-size:19.200012px;display:flex;align-items:center;">IB 1</div>
+<div class="box" style="left:100px;top:680px;width:100px;height:40px;background:rgb(22,160,133);"></div>
+<div class="text" style="left:100px;top:680px;width:32px;height:19.200012px;color:rgb(0,0,0);font-size:19.200012px;display:flex;align-items:center;">IB 2</div>
+<div class="box" style="left:200px;top:680px;width:100px;height:40px;background:rgb(26,188,156);"></div>
+<div class="text" style="left:200px;top:680px;width:32px;height:19.200012px;color:rgb(0,0,0);font-size:19.200012px;display:flex;align-items:center;">IB 3</div>
+</div>
+<h2>Display List (first 50)</h2>
+<table><tr><th>#</th><th>Type</th><th>Rect</th><th>Details</th></tr>
+<tr><td>0</td><td>SolidColor</td><td>0.0,0.0 800.0x50.0</td><td>rgb(44,62,80)</td></tr>
+<tr><td>1</td><td>Text</td><td>0.0,0.0 96.0x19.2</td><td>'Fixed Navbar' rgb(0,0,0)</td></tr>
+<tr><td>2</td><td>SolidColor</td><td>0.0,60.0 200.0x150.0</td><td>rgb(231,76,60)</td></tr>
+<tr><td>3</td><td>Text</td><td>0.0,60.0 80.0x19.2</td><td>'Float Left' rgb(0,0,0)</td></tr>
+<tr><td>4</td><td>Text</td><td>0.0,60.0 728.0x19.2</td><td>'This text flows arou' rgb(0,0,0)</td></tr>
+<tr><td>5</td><td>Text</td><td>0.0,79.2 144.0x19.2</td><td>'20px right margin.' rgb(0,0,0)</td></tr>
+<tr><td>6</td><td>SolidColor</td><td>30.0,230.0 300.0x80.0</td><td>rgb(52,152,219)</td></tr>
+<tr><td>7</td><td>Text</td><td>30.0,230.0 296.0x19.2</td><td>'Relative: offset 30p' rgb(255,255,255)</td></tr>
+<tr><td>8</td><td>SolidColor</td><td>0.0,340.0 400.0x200.0</td><td>rgb(236,240,241)</td></tr>
+<tr><td>9</td><td>SolidColor</td><td>280.0,360.0 100.0x50.0</td><td>rgb(155,89,182)</td></tr>
+<tr><td>10</td><td>Text</td><td>280.0,360.0 64.0x19.2</td><td>'Absolute' rgb(255,255,255)</td></tr>
+<tr><td>11</td><td>Text</td><td>0.0,340.0 160.0x19.2</td><td>'Positioned container' rgb(0,0,0)</td></tr>
+<tr><td>12</td><td>SolidColor</td><td>0.0,560.0 760.0x100.0</td><td>rgb(243,156,18)</td></tr>
+<tr><td>13</td><td>SolidColor</td><td>0.0,580.0 80.0x60.0</td><td>rgb(230,126,34)</td></tr>
+<tr><td>14</td><td>Text</td><td>0.0,580.0 48.0x19.2</td><td>'Flex 1' rgb(0,0,0)</td></tr>
+<tr><td>15</td><td>SolidColor</td><td>340.0,580.0 80.0x60.0</td><td>rgb(211,84,0)</td></tr>
+<tr><td>16</td><td>Text</td><td>340.0,580.0 48.0x19.2</td><td>'Flex 2' rgb(0,0,0)</td></tr>
+<tr><td>17</td><td>SolidColor</td><td>680.0,580.0 80.0x60.0</td><td>rgb(230,126,34)</td></tr>
+<tr><td>18</td><td>Text</td><td>680.0,580.0 48.0x19.2</td><td>'Flex 3' rgb(0,0,0)</td></tr>
+<tr><td>19</td><td>SolidColor</td><td>0.0,680.0 100.0x40.0</td><td>rgb(26,188,156)</td></tr>
+<tr><td>20</td><td>Text</td><td>0.0,680.0 32.0x19.2</td><td>'IB 1' rgb(0,0,0)</td></tr>
+<tr><td>21</td><td>SolidColor</td><td>100.0,680.0 100.0x40.0</td><td>rgb(22,160,133)</td></tr>
+<tr><td>22</td><td>Text</td><td>100.0,680.0 32.0x19.2</td><td>'IB 2' rgb(0,0,0)</td></tr>
+<tr><td>23</td><td>SolidColor</td><td>200.0,680.0 100.0x40.0</td><td>rgb(26,188,156)</td></tr>
+<tr><td>24</td><td>Text</td><td>200.0,680.0 32.0x19.2</td><td>'IB 3' rgb(0,0,0)</td></tr>
+</table></body></html>

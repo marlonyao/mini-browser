@@ -637,7 +637,7 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
 
     for child in &mut layout_box.children {
         if matches!(child.box_type, BoxType::FloatLeftNode(_) | BoxType::FloatRightNode(_)
-            | BoxType::AbsoluteNode(_) | BoxType::FixedNode(_) | BoxType::FlexNode(_)) {
+            | BoxType::AbsoluteNode(_) | BoxType::FixedNode(_)) {
             continue;
         }
 
@@ -665,7 +665,7 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
         child_containing.content.y = child_y;
 
         match &child.box_type {
-            BoxType::BlockNode(_) | BoxType::InlineBlockNode(_) => {
+            BoxType::BlockNode(_) | BoxType::InlineBlockNode(_) | BoxType::FlexNode(_) => {
                 layout(child, child_containing);
             }
             BoxType::AnonymousBlock => {
@@ -1212,10 +1212,12 @@ fn layout_flex(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
         let size = final_sizes[idx];
 
         // Main-axis position
+        // For space-between, gap is inter-item only (no prefix on first item)
+        let prefix_gap = if justify_content == "space-between" { 0.0 } else { gap };
         let main_pos = if is_row {
-            layout_box.dimensions.content.x + main_offset + gap
+            layout_box.dimensions.content.x + main_offset + prefix_gap
         } else {
-            layout_box.dimensions.content.y + main_offset + gap
+            layout_box.dimensions.content.y + main_offset + prefix_gap
         };
 
         // Cross-axis size and position

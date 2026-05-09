@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="white"/>
+  <rect x="0.0" y="0.0" width="800.0" height="50.0" fill="rgb(44,62,80)"/>
+  <text x="0.0" y="16.3" font-size="19.2" fill="rgb(0,0,0)">Fixed Navbar</text>
+  <rect x="0.0" y="60.0" width="200.0" height="150.0" fill="rgb(231,76,60)"/>
+  <text x="0.0" y="76.3" font-size="19.2" fill="rgb(0,0,0)">Float Left</text>
+  <text x="0.0" y="76.3" font-size="19.2" fill="rgb(0,0,0)">This text flows around the red float box on the left. 
+      The float is 200px wide with a</text>
+  <text x="0.0" y="95.5" font-size="19.2" fill="rgb(0,0,0)">20px right margin.</text>
+  <rect x="30.0" y="230.0" width="300.0" height="80.0" fill="rgb(52,152,219)"/>
+  <text x="30.0" y="246.3" font-size="19.2" fill="rgb(255,255,255)">Relative: offset 30px left, 10px down</text>
+  <rect x="0.0" y="340.0" width="400.0" height="200.0" fill="rgb(236,240,241)"/>
+  <rect x="280.0" y="360.0" width="100.0" height="50.0" fill="rgb(155,89,182)"/>
+  <text x="280.0" y="376.3" font-size="19.2" fill="rgb(255,255,255)">Absolute</text>
+  <text x="0.0" y="356.3" font-size="19.2" fill="rgb(0,0,0)">Positioned container</text>
+  <rect x="0.0" y="560.0" width="760.0" height="100.0" fill="rgb(243,156,18)"/>
+  <rect x="0.0" y="580.0" width="80.0" height="60.0" fill="rgb(230,126,34)"/>
+  <text x="0.0" y="596.3" font-size="19.2" fill="rgb(0,0,0)">Flex 1</text>
+  <rect x="340.0" y="580.0" width="80.0" height="60.0" fill="rgb(211,84,0)"/>
+  <text x="340.0" y="596.3" font-size="19.2" fill="rgb(0,0,0)">Flex 2</text>
+  <rect x="680.0" y="580.0" width="80.0" height="60.0" fill="rgb(230,126,34)"/>
+  <text x="680.0" y="596.3" font-size="19.2" fill="rgb(0,0,0)">Flex 3</text>
+  <rect x="0.0" y="680.0" width="100.0" height="40.0" fill="rgb(26,188,156)"/>
+  <text x="0.0" y="696.3" font-size="19.2" fill="rgb(0,0,0)">IB 1</text>
+  <rect x="100.0" y="680.0" width="100.0" height="40.0" fill="rgb(22,160,133)"/>
+  <text x="100.0" y="696.3" font-size="19.2" fill="rgb(0,0,0)">IB 2</text>
+  <rect x="200.0" y="680.0" width="100.0" height="40.0" fill="rgb(26,188,156)"/>
+  <text x="200.0" y="696.3" font-size="19.2" fill="rgb(0,0,0)">IB 3</text>
+</svg>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<body style="margin: 0; font-family: sans-serif;">
+  <!-- Header: Fixed navbar -->
+  <div style="position: fixed; top: 0; left: 0; width: 100%; height: 50px; background: #2c3e50; color: white; z-index: 100;">
+    <span style="display: inline-block; padding: 15px;">Fixed Navbar</span>
+  </div>
+
+  <!-- Main container -->
+  <div style="margin-top: 60px; padding: 20px; width: 760px;">
+    
+    <!-- Float section -->
+    <div style="float: left; width: 200px; height: 150px; background: #e74c3c; margin-right: 20px;">
+      Float Left
+    </div>
+    
+    <!-- Inline text wrapping around float -->
+    <p style="margin: 0;">
+      This text flows around the red float box on the left. 
+      The float is 200px wide with a 20px right margin.
+    </p>
+    
+    <!-- Clear after float -->
+    <div style="clear: both; height: 10px;"></div>
+    
+    <!-- Relative offset box -->
+    <div style="position: relative; left: 30px; top: 10px; width: 300px; height: 80px; background: #3498db; color: white;">
+      Relative: offset 30px left, 10px down
+    </div>
+    
+    <!-- Absolute positioned inside a positioned container -->
+    <div style="position: relative; width: 400px; height: 200px; background: #ecf0f1; margin-top: 30px;">
+      Positioned container
+      <div style="position: absolute; top: 20px; right: 20px; width: 100px; height: 50px; background: #9b59b6; color: white;">
+        Absolute
+      </div>
+    </div>
+    
+    <!-- Flex container -->
+    <div style="display: flex; flex-direction: row; justify-content: space-between; align-items: center; width: 100%; height: 100px; background: #f39c12; margin-top: 20px;">
+      <div style="width: 80px; height: 60px; background: #e67e22;">Flex 1</div>
+      <div style="width: 80px; height: 60px; background: #d35400;">Flex 2</div>
+      <div style="width: 80px; height: 60px; background: #e67e22;">Flex 3</div>
+    </div>
+    
+    <!-- Inline-block elements in a row -->
+    <div style="margin-top: 20px;">
+      <span style="display: inline-block; width: 100px; height: 40px; background: #1abc9c;">IB 1</span>
+      <span style="display: inline-block; width: 100px; height: 40px; background: #16a085;">IB 2</span>
+      <span style="display: inline-block; width: 100px; height: 40px; background: #1abc9c;">IB 3</span>
+    </div>
+    
+  </div>
+</body>
+</html>
