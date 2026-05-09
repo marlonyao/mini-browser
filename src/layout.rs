@@ -183,6 +183,33 @@ pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
             layout_float(layout_box, &containing_block.content, &mut FloatContext::default());
         }
     }
+    apply_relative_offset(layout_box, &containing_block);
+}
+
+fn apply_relative_offset(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
+    let styled = match &layout_box.box_type {
+        BoxType::BlockNode(s) | BoxType::InlineNode(s) | BoxType::InlineBlockNode(s)
+        | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s) => Some(s.clone()),
+        BoxType::AnonymousBlock => None,
+    };
+
+    if let Some(styled) = styled.as_ref() {
+        if styled.specified_values.get("position").map(|v| v.as_str()) == Some("relative") {
+            let top = get_length(Some(styled), "top", containing_block.content.height);
+            let left = get_length(Some(styled), "left", containing_block.content.width);
+            let right = get_length(Some(styled), "right", containing_block.content.width);
+            let bottom = get_length(Some(styled), "bottom", containing_block.content.height);
+
+            let offset_x = if left != 0.0 { left } else { -right };
+            let offset_y = if top != 0.0 { top } else { -bottom };
+
+            if offset_x != 0.0 || offset_y != 0.0 {
+                let new_x = layout_box.dimensions.content.x + offset_x;
+                let new_y = layout_box.dimensions.content.y + offset_y;
+                set_absolute_positions(layout_box, new_x, new_y);
+            }
+        }
+    }
 }
 
 fn set_absolute_positions(layout_box: &mut LayoutBox, abs_x: f32, abs_y: f32) {
@@ -610,7 +637,7 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
 
         match &child.box_type {
             BoxType::BlockNode(_) | BoxType::InlineBlockNode(_) => {
-                layout_block(child, &child_containing);
+                layout(child, child_containing);
             }
             BoxType::AnonymousBlock => {
                 layout_inline_block(child, &child_containing, &mut float_context);
@@ -1276,5 +1303,67 @@ mod tests {
         let clear_child = &root.children[1];
         // Clear child should be placed below the float (y >= 100)
         assert_eq!(clear_child.dimensions.content.y, 100.0);
+    }
+
+    #[test]
+    fn test_position_relative_left_top() {
+        let mut child_styles = HashMap::new();
+        child_styles.insert("position".to_string(), "relative".to_string());
+        child_styles.insert("left".to_string(), "30px".to_string());
+        child_styles.insert("top".to_string(), "20px".to_string());
+        child_styles.insert("width".to_string(), "100px".to_string());
+        child_styles.insert("height".to_string(), "50px".to_string());
+        let child = styled_element("div", child_styles, vec![]);
+
+        let parent = styled_element("div", HashMap::new(), vec![child]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child_box = &root.children[0];
+        assert_eq!(child_box.dimensions.content.x, 30.0);
+        assert_eq!(child_box.dimensions.content.y, 20.0);
+    }
+
+    #[test]
+    fn test_position_relative_right_bottom() {
+        let mut child_styles = HashMap::new();
+        child_styles.insert("position".to_string(), "relative".to_string());
+        child_styles.insert("right".to_string(), "10px".to_string());
+        child_styles.insert("bottom".to_string(), "5px".to_string());
+        let child = styled_element("div", child_styles, vec![]);
+
+        let parent = styled_element("div", HashMap::new(), vec![child]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child_box = &root.children[0];
+        assert_eq!(child_box.dimensions.content.x, -10.0);
+        assert_eq!(child_box.dimensions.content.y, -5.0);
+    }
+
+    #[test]
+    fn test_position_relative_children_move() {
+        let mut grandchild_styles = HashMap::new();
+        grandchild_styles.insert("width".to_string(), "50px".to_string());
+        grandchild_styles.insert("height".to_string(), "25px".to_string());
+        let grandchild = styled_element("span", grandchild_styles, vec![]);
+
+        let mut child_styles = HashMap::new();
+        child_styles.insert("position".to_string(), "relative".to_string());
+        child_styles.insert("left".to_string(), "20px".to_string());
+        child_styles.insert("top".to_string(), "10px".to_string());
+        let child = styled_element("div", child_styles, vec![grandchild]);
+
+        let parent = styled_element("div", HashMap::new(), vec![child]);
+        let mut root = build_layout_tree(&parent);
+        layout(&mut root, viewport());
+
+        let child_box = &root.children[0];
+        let grandchild_box = &child_box.children[0];
+
+        assert_eq!(child_box.dimensions.content.x, 20.0);
+        assert_eq!(child_box.dimensions.content.y, 10.0);
+        assert_eq!(grandchild_box.dimensions.content.x, 20.0);
+        assert_eq!(grandchild_box.dimensions.content.y, 10.0);
     }
 }

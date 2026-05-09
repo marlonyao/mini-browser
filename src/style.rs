@@ -158,6 +158,20 @@ pub fn style_tree(root: &Node, stylesheet: &Stylesheet) -> StyledNode {
                 }
             }
 
+            // Inline style has highest specificity (overrides everything)
+            if let Some(inline_style) = element.attrs.get("style") {
+                for decl in inline_style.split(';') {
+                    let decl = decl.trim();
+                    if decl.is_empty() { continue; }
+                    if let Some((prop, val)) = decl.split_once(':') {
+                        specified_values.insert(
+                            prop.trim().to_string(),
+                            val.trim().to_string(),
+                        );
+                    }
+                }
+            }
+
             let children: Vec<StyledNode> = element
                 .children
                 .iter()
