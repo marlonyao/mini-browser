@@ -6,23 +6,33 @@ use mini_browser::paint::build_display_list;
 use std::fs;
 
 fn main() {
-    let html = fs::read_to_string("baidu.html").expect("Failed to read baidu.html");
+    let html = fs::read_to_string("baidu_real.html").expect("Failed to read baidu_real.html");
     println!("=== HTML size: {} bytes ===", html.len());
 
     // 1. Parse HTML
     let dom = parse_html(&html);
     println!("✅ DOM parsed");
 
-    // 2. Extract inline styles (baidu.html has no inline <style>, only external CSS link)
+    // 2. Load external CSS if available
     let mut stylesheet = Stylesheet { rules: Vec::new() };
-    // Baidu uses external CSS; we don't fetch it here for offline test
-    // But we can test with just UA default styles
+    if let Ok(css) = fs::read_to_string("baidu.css") {
+        let parsed = parse_css(&css);
+        let rule_count = parsed.rules.len();
+        stylesheet.rules.extend(parsed.rules);
+        println!("✅ External CSS loaded ({} rules)", rule_count);
+    } else {
+        println!("⚠️  External CSS not found, using UA defaults only");
+    }
     merge_default_styles(&mut stylesheet);
-    println!("✅ Stylesheet ready ({} rules)", stylesheet.rules.len());
+    println!("✅ Stylesheet ready ({} rules total)", stylesheet.rules.len());
 
     // 3. Build styled tree
     let styled = style_tree(&dom, &stylesheet);
     println!("✅ Styled tree built");
+
+    // Print styled tree structure
+    println!("\n=== Styled Tree Structure ===");
+    mini_browser::style::print_style_tree(&styled, 0);
 
     // 4. Build layout tree
     let mut layout_root = build_layout_tree(&styled);
@@ -35,6 +45,10 @@ fn main() {
     };
     layout(&mut layout_root, viewport);
     println!("✅ Layout computed");
+
+    // Print layout tree structure
+    println!("\n=== Layout Tree Structure ===");
+    mini_browser::layout::print_layout_box(&layout_root, 0);
 
     // 6. Build display list
     let display_list = build_display_list(&layout_root);

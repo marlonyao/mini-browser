@@ -17,8 +17,51 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut chars = input.chars().peekable();
     let mut current_text = String::new();
+    let mut raw_text_tag: Option<String> = None; // "script", "style", "textarea"
 
     while let Some(&ch) = chars.peek() {
+        // ── Raw text mode (inside <script>, <style>, <textarea>) ──
+        if let Some(ref tag) = raw_text_tag {
+            if ch == '<' {
+                // Peek ahead to see if this is the matching end tag
+                let mut lookahead = chars.clone();
+                lookahead.next(); // consume '<'
+                if lookahead.peek() == Some(&'/') {
+                    lookahead.next(); // consume '/'
+                    let mut end_tag_name = String::new();
+                    while let Some(&c) = lookahead.peek() {
+                        if c.is_whitespace() || c == '>' {
+                            break;
+                        }
+                        end_tag_name.push(c);
+                        lookahead.next();
+                    }
+                    if end_tag_name.eq_ignore_ascii_case(tag) {
+                        // Yes, this is the closing tag — flush text and exit raw mode
+                        if !current_text.is_empty() {
+                            let text = std::mem::take(&mut current_text);
+                            tokens.push(Token::Text(text));
+                        }
+                        raw_text_tag = None;
+                        // Now fall through to normal '<' handling below
+                    } else {
+                        // Not the closing tag — treat '<' as raw text
+                        current_text.push(ch);
+                        chars.next();
+                        continue;
+                    }
+                } else {
+                    current_text.push(ch);
+                    chars.next();
+                    continue;
+                }
+            } else {
+                current_text.push(ch);
+                chars.next();
+                continue;
+            }
+        }
+
         if ch == '<' {
             if !current_text.is_empty() {
                 let decoded = decode_html_entities(&current_text);
@@ -180,10 +223,14 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 tokens.push(Token::EndTag { tag: tag_name });
             } else {
                 tokens.push(Token::StartTag {
-                    tag: tag_name,
+                    tag: tag_name.clone(),
                     attrs,
                     self_closing,
                 });
+                // Enter raw text mode for script/style/textarea
+                if !self_closing && matches!(tag_name.as_str(), "script" | "style" | "textarea") {
+                    raw_text_tag = Some(tag_name.clone());
+                }
             }
         } else {
             current_text.push(ch);
