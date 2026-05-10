@@ -32,7 +32,7 @@ fn parse_stylesheet(tokens: &[CssToken]) -> Stylesheet {
             rules.push(rule);
             pos = new_pos;
         } else {
-            break;
+            pos += 1;
         }
     }
 
@@ -57,13 +57,53 @@ fn parse_selectors(tokens: &[CssToken], pos: usize) -> Option<(Vec<Selector>, us
     let mut pos = pos;
 
     loop {
+        // Skip leading whitespace
+        while pos < tokens.len() && tokens[pos] == CssToken::Whitespace {
+            pos += 1;
+        }
         if pos >= tokens.len() {
             return None;
         }
 
-        let (selector, new_pos) = parse_simple_selector(tokens, pos)?;
-        selectors.push(Selector::Simple(selector));
+        // Parse a chain of simple selectors (descendant combinator via space)
+        let mut chain = Vec::new();
+        let (first, new_pos) = parse_simple_selector(tokens, pos)?;
+        chain.push(first);
         pos = new_pos;
+
+        // Keep parsing additional simple selectors if whitespace separates them
+        loop {
+            if pos >= tokens.len() {
+                break;
+            }
+            // Whitespace might indicate descendant combinator
+            if tokens[pos] == CssToken::Whitespace {
+                pos += 1;
+                if pos >= tokens.len() {
+                    break;
+                }
+                // If the next token can start a new simple selector, it's a descendant
+                if let Some((next_sel, next_pos)) = parse_simple_selector(tokens, pos) {
+                    chain.push(next_sel);
+                    pos = next_pos;
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            // Comma or LBrace means the chain ends
+            if tokens[pos] == CssToken::Comma || tokens[pos] == CssToken::LBrace {
+                break;
+            }
+            // Non-whitespace, non-comma, non-lbrace without a parseable simple selector = end
+            break;
+        }
+
+        if chain.len() == 1 {
+            selectors.push(Selector::Simple(chain.into_iter().next().unwrap()));
+        } else {
+            selectors.push(Selector::Descendant(chain));
+        }
 
         if pos < tokens.len() && tokens[pos] == CssToken::Comma {
             pos += 1; // skip comma
@@ -102,6 +142,28 @@ fn parse_simple_selector(tokens: &[CssToken], pos: usize) -> Option<(SimpleSelec
                 selector.classes.push(class.clone());
                 pos += 1;
             }
+            CssToken::Colon => {
+                // Skip pseudo-class or pseudo-element (:hover, ::after, :nth-child(3n+1))
+                pos += 1;
+                // Skip optional second colon for ::pseudo-element
+                if pos < tokens.len() && tokens[pos] == CssToken::Colon {
+                    pos += 1;
+                }
+                // Skip the pseudo-class name (Ident)
+                if pos < tokens.len() && matches!(tokens[pos], CssToken::Ident(_)) {
+                    pos += 1;
+                }
+                // Skip parentheses: :nth-child(3n+1)
+                if pos < tokens.len() && tokens[pos] == CssToken::LParen {
+                    pos += 1;
+                    while pos < tokens.len() && tokens[pos] != CssToken::RParen {
+                        pos += 1;
+                    }
+                    if pos < tokens.len() {
+                        pos += 1; // skip )
+                    }
+                }
+            }
             _ => break,
         }
     }
@@ -118,6 +180,13 @@ fn parse_declarations(tokens: &[CssToken], pos: usize) -> Option<(Vec<Declaratio
     let mut pos = pos;
 
     while pos < tokens.len() && tokens[pos] != CssToken::RBrace {
+        // Skip leading whitespace
+        while pos < tokens.len() && tokens[pos] == CssToken::Whitespace {
+            pos += 1;
+        }
+        if pos >= tokens.len() || tokens[pos] == CssToken::RBrace {
+            break;
+        }
         if let Some((decl, new_pos)) = parse_declaration(tokens, pos) {
             // Expand shorthand properties
             let expanded = expand_shorthand(decl);
@@ -225,10 +294,20 @@ fn parse_declaration(tokens: &[CssToken], pos: usize) -> Option<(Declaration, us
     };
     let mut pos = pos + 1;
 
+    // Skip whitespace before colon
+    while pos < tokens.len() && tokens[pos] == CssToken::Whitespace {
+        pos += 1;
+    }
+
     if pos >= tokens.len() || tokens[pos] != CssToken::Colon {
         return None;
     }
     pos += 1; // skip :
+
+    // Skip whitespace after colon
+    while pos < tokens.len() && tokens[pos] == CssToken::Whitespace {
+        pos += 1;
+    }
 
     let (value, new_pos) = parse_value(tokens, pos)?;
     pos = new_pos;
@@ -247,6 +326,9 @@ fn parse_value(tokens: &[CssToken], pos: usize) -> Option<(String, usize)> {
     while pos < tokens.len() {
         match &tokens[pos] {
             CssToken::Semicolon | CssToken::RBrace => break,
+            CssToken::Whitespace => {
+                pos += 1;
+            }
             CssToken::Ident(s) => {
                 if !value.is_empty() {
                     value.push(' ');
@@ -353,6 +435,7 @@ mod tests {
                 assert_eq!(s.id, Some("main".to_string()));
                 assert_eq!(s.classes, vec!["container".to_string()]);
             }
+            _ => panic!("Expected Simple selector"),
         }
     }
 
@@ -366,6 +449,7 @@ mod tests {
                 assert_eq!(s.id, Some("main".to_string()));
                 assert_eq!(s.classes, vec!["container".to_string()]);
             }
+            _ => panic!("Expected Simple selector"),
         }
     }
 

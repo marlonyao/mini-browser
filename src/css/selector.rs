@@ -3,6 +3,23 @@ use crate::dom::Element;
 #[derive(Debug, PartialEq, Clone)]
 pub enum Selector {
     Simple(SimpleSelector),
+    /// Descendant selector: `.a .b .c` matches an element that matches
+    /// the last simple selector, and has ancestors matching the preceding
+    /// selectors in order.
+    Descendant(Vec<SimpleSelector>),
+}
+
+impl Selector {
+    pub fn specificity(&self) -> (usize, usize, usize) {
+        match self {
+            Selector::Simple(s) => s.specificity(),
+            Selector::Descendant(chain) => {
+                chain.iter()
+                    .map(|s| s.specificity())
+                    .fold((0, 0, 0), |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2))
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]

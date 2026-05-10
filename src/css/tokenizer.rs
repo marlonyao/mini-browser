@@ -13,6 +13,7 @@ pub enum CssToken {
     String(String),
     Number(f64),
     Unit(f64, String),
+    Whitespace,
 }
 
 pub fn tokenize(input: &str) -> Vec<CssToken> {
@@ -22,6 +23,15 @@ pub fn tokenize(input: &str) -> Vec<CssToken> {
     while let Some(&ch) = chars.peek() {
         if ch.is_whitespace() {
             chars.next();
+            // Only emit a single Whitespace token for consecutive whitespace
+            tokens.push(CssToken::Whitespace);
+            while let Some(&c) = chars.peek() {
+                if c.is_whitespace() {
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
             continue;
         }
 
@@ -172,11 +182,15 @@ mod tests {
             tokens,
             vec![
                 CssToken::Ident("div".to_string()),
+                CssToken::Whitespace,
                 CssToken::LBrace,
+                CssToken::Whitespace,
                 CssToken::Ident("color".to_string()),
                 CssToken::Colon,
+                CssToken::Whitespace,
                 CssToken::Ident("red".to_string()),
                 CssToken::Semicolon,
+                CssToken::Whitespace,
                 CssToken::RBrace,
             ]
         );
@@ -189,7 +203,9 @@ mod tests {
             tokens,
             vec![
                 CssToken::DotClass("main".to_string()),
+                CssToken::Whitespace,
                 CssToken::LBrace,
+                CssToken::Whitespace,
                 CssToken::RBrace,
             ]
         );
@@ -202,7 +218,9 @@ mod tests {
             tokens,
             vec![
                 CssToken::Hash("header".to_string()),
+                CssToken::Whitespace,
                 CssToken::LBrace,
+                CssToken::Whitespace,
                 CssToken::RBrace,
             ]
         );
@@ -216,10 +234,13 @@ mod tests {
             vec![
                 CssToken::Ident("color".to_string()),
                 CssToken::Colon,
+                CssToken::Whitespace,
                 CssToken::Ident("red".to_string()),
                 CssToken::Semicolon,
+                CssToken::Whitespace,
                 CssToken::Ident("font-size".to_string()),
                 CssToken::Colon,
+                CssToken::Whitespace,
                 CssToken::Unit(16.0, "px".to_string()),
                 CssToken::Semicolon,
             ]
@@ -234,10 +255,13 @@ mod tests {
             vec![
                 CssToken::Ident("content".to_string()),
                 CssToken::Colon,
+                CssToken::Whitespace,
                 CssToken::String("hello".to_string()),
                 CssToken::Semicolon,
+                CssToken::Whitespace,
                 CssToken::Ident("opacity".to_string()),
                 CssToken::Colon,
+                CssToken::Whitespace,
                 CssToken::Number(0.5),
                 CssToken::Semicolon,
             ]
@@ -252,12 +276,17 @@ mod tests {
             vec![
                 CssToken::Ident("h1".to_string()),
                 CssToken::Comma,
+                CssToken::Whitespace,
                 CssToken::Ident("h2".to_string()),
+                CssToken::Whitespace,
                 CssToken::LBrace,
+                CssToken::Whitespace,
                 CssToken::Ident("color".to_string()),
                 CssToken::Colon,
+                CssToken::Whitespace,
                 CssToken::Ident("blue".to_string()),
                 CssToken::Semicolon,
+                CssToken::Whitespace,
                 CssToken::RBrace,
             ]
         );
@@ -269,8 +298,11 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
+                CssToken::Whitespace,
                 CssToken::Ident("div".to_string()),
+                CssToken::Whitespace,
                 CssToken::LBrace,
+                CssToken::Whitespace,
                 CssToken::RBrace,
             ]
         );

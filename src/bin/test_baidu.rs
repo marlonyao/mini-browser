@@ -91,5 +91,38 @@ fn main() {
         }
     }
 
+    // Debug: find some <a> tags in layout tree and print their x
+    println!("\n=== Debug: <a> tags in layout tree ===");
+    fn find_a_tags(layout_box: &mini_browser::layout::LayoutBox, indent: usize) {
+        use mini_browser::layout::BoxType;
+        use mini_browser::dom::Node;
+        let spaces = "  ".repeat(indent);
+        match &layout_box.box_type {
+            BoxType::InlineNode(styled) | BoxType::BlockNode(styled) | BoxType::InlineBlockNode(styled)
+            | BoxType::FlexNode(styled) | BoxType::FloatLeftNode(styled) | BoxType::FloatRightNode(styled)
+            | BoxType::AbsoluteNode(styled) | BoxType::FixedNode(styled) => {
+                if let Node::Element(el) = &styled.node {
+                    if el.tag == "a" || el.tag == "span" || el.tag == "div" {
+                        println!("{}<{}> x={:.1} y={:.1} w={:.1} h={:.1}",
+                            spaces, el.tag,
+                            layout_box.dimensions.content.x,
+                            layout_box.dimensions.content.y,
+                            layout_box.dimensions.content.width,
+                            layout_box.dimensions.content.height);
+                    }
+                    for child in &layout_box.children {
+                        find_a_tags(child, indent + 1);
+                    }
+                }
+            }
+            _ => {
+                for child in &layout_box.children {
+                    find_a_tags(child, indent + 1);
+                }
+            }
+        }
+    }
+    find_a_tags(&layout_root, 0);
+
     println!("\n=== SUCCESS ===");
 }

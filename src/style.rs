@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::dom::Node;
+use crate::dom::{Element, Node};
 use crate::css::parser::{parse_css, Stylesheet};
 use crate::css::selector::{matches, Selector};
 
@@ -132,6 +132,41 @@ pub fn merge_default_styles(stylesheet: &mut Stylesheet) {
 }
 
 pub fn style_tree(root: &Node, stylesheet: &Stylesheet) -> StyledNode {
+    style_tree_with_parents(root, stylesheet, &[])
+}
+
+fn selector_matches(selector: &Selector, element: &Element, parents: &[&Element]) -> bool {
+    match selector {
+        Selector::Simple(simple) => matches(simple, element),
+        Selector::Descendant(chain) => {
+            if chain.is_empty() {
+                return false;
+            }
+            let last = chain.len() - 1;
+            if !matches(&chain[last], element) {
+                return false;
+            }
+            // Walk up parent chain, matching earlier selectors
+            let mut parent_idx = parents.len();
+            for sel_idx in (0..last).rev() {
+                let mut found = false;
+                while parent_idx > 0 {
+                    parent_idx -= 1;
+                    if matches(&chain[sel_idx], parents[parent_idx]) {
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    return false;
+                }
+            }
+            true
+        }
+    }
+}
+
+fn style_tree_with_parents(root: &Node, stylesheet: &Stylesheet, parents: &[&Element]) -> StyledNode {
     match root {
         Node::Element(element) => {
             let mut specified_values = HashMap::new();
@@ -139,9 +174,8 @@ pub fn style_tree(root: &Node, stylesheet: &Stylesheet) -> StyledNode {
 
             for rule in &stylesheet.rules {
                 for selector in &rule.selectors {
-                    let Selector::Simple(simple) = selector;
-                    if matches(simple, element) {
-                        matched.push((simple.specificity(), &rule.declarations));
+                    if selector_matches(selector, element, parents) {
+                        matched.push((selector.specificity(), &rule.declarations));
                     }
                 }
             }
@@ -172,10 +206,14 @@ pub fn style_tree(root: &Node, stylesheet: &Stylesheet) -> StyledNode {
                 }
             }
 
+            // Build parent chain for children
+            let mut child_parents: Vec<&Element> = parents.to_vec();
+            child_parents.push(element);
+
             let children: Vec<StyledNode> = element
                 .children
                 .iter()
-                .map(|child| style_tree(child, stylesheet))
+                .map(|child| style_tree_with_parents(child, stylesheet, &child_parents))
                 .collect();
 
             StyledNode {

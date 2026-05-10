@@ -175,12 +175,20 @@ pub fn build_layout_tree(styled: &StyledNode) -> LayoutBox {
 }
 
 pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
+    layout_with_context(layout_box, containing_block, None);
+}
+
+fn layout_with_context(
+    layout_box: &mut LayoutBox,
+    containing_block: Dimensions,
+    positioned_ancestor: Option<&Dimensions>,
+) {
     match layout_box.box_type {
         BoxType::BlockNode(_) | BoxType::InlineBlockNode(_) => {
-            layout_block(layout_box, &containing_block);
+            layout_block(layout_box, &containing_block, positioned_ancestor);
         }
         BoxType::FlexNode(_) => {
-            layout_flex(layout_box, &containing_block);
+            layout_flex(layout_box, &containing_block, positioned_ancestor);
         }
         BoxType::AnonymousBlock => {
             layout_inline_block(layout_box, &containing_block, &mut FloatContext::default());
@@ -192,10 +200,7 @@ pub fn layout(layout_box: &mut LayoutBox, containing_block: Dimensions) {
             layout_float(layout_box, &containing_block.content, &mut FloatContext::default());
         }
         BoxType::AbsoluteNode(_) | BoxType::FixedNode(_) => {
-            // Absolute/fixed elements are laid out by their containing block after
-            // normal flow is complete.  When layout() is called directly on
-            // an absolute/fixed box (e.g. top-level), treat it as a normal block.
-            layout_block(layout_box, &containing_block);
+            layout_block(layout_box, &containing_block, positioned_ancestor);
         }
     }
     apply_relative_offset(layout_box, &containing_block);
@@ -353,7 +358,7 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
                 ib_containing.content.x = 0.0;
                 ib_containing.content.y = 0.0;
                 ib_containing.content.width = content_width;
-                layout_block(child, &ib_containing);
+                layout_block(child, &ib_containing, None);
 
                 // Total outer size for line layout
                 let child_total_width = content_width
@@ -551,7 +556,7 @@ fn initial_containing_block() -> Dimensions {
     d
 }
 
-fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
+fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions, positioned_ancestor: Option<&Dimensions>) {
     let styled = match &layout_box.box_type {
         BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s)
         | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s)
@@ -665,9 +670,15 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
         }
         child_containing.content.y = child_y;
 
+        let is_positioned = styled.as_ref()
+            .and_then(|s| s.specified_values.get("position"))
+            .map(|v| v != "static")
+            .unwrap_or(false);
+
         match &child.box_type {
             BoxType::BlockNode(_) | BoxType::InlineBlockNode(_) | BoxType::FlexNode(_) => {
-                layout(child, child_containing);
+                let cb = if is_positioned { Some(&layout_box.dimensions) } else { positioned_ancestor };
+                layout_with_context(child, child_containing, cb);
             }
             BoxType::AnonymousBlock => {
                 layout_inline_block(child, &child_containing, &mut float_context);
@@ -709,15 +720,23 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
         .map(|v| parse_length_percent(v, containing_block.content.height))
         .unwrap_or(f32::INFINITY);
 
-    let computed_content_height = if layout_box.children.is_empty() {
-        0.0
-    } else {
-        let last = layout_box.children.last().unwrap();
-        let last_child_bottom = last.dimensions.content.y
-            + last.dimensions.content.height
-            + last.dimensions.padding.bottom
-            + last.dimensions.border.bottom;
-        last_child_bottom - layout_box.dimensions.content.y
+    let computed_content_height = {
+        let mut max_bottom = 0.0f32;
+        for child in &layout_box.children {
+            if matches!(child.box_type, BoxType::AbsoluteNode(_) | BoxType::FixedNode(_)) {
+                continue;
+            }
+            let child_bottom = child.dimensions.content.y
+                + child.dimensions.content.height
+                + child.dimensions.padding.bottom
+                + child.dimensions.border.bottom;
+            max_bottom = max_bottom.max(child_bottom);
+        }
+        if max_bottom > 0.0 {
+            max_bottom - layout_box.dimensions.content.y
+        } else {
+            0.0
+        }
     };
 
     let final_height = match explicit_height {
@@ -745,10 +764,12 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
 
     layout_box.dimensions.content.height = final_height;
 
-    // Round 3: layout absolute children after normal flow is complete
+    // Round 3: layout absolute/fixed children after normal flow is complete
     for child in &mut layout_box.children {
         if matches!(child.box_type, BoxType::AbsoluteNode(_)) {
             layout_absolute(child, &layout_box.dimensions);
+        } else if matches!(child.box_type, BoxType::FixedNode(_)) {
+            layout_absolute(child, &initial_containing_block());
         }
     }
 }
@@ -839,7 +860,7 @@ fn layout_float(layout_box: &mut LayoutBox, container: &Rect, float_context: &mu
     inner.content.x = content_x;
     inner.content.y = y + margin_top + border_top + padding_top;
     inner.content.width = content_width;
-    layout_block(layout_box, &inner);
+    layout_block(layout_box, &inner, None);
 
     let content_height = layout_box.dimensions.content.height;
 
@@ -994,7 +1015,7 @@ fn layout_absolute(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     inner.content.x = content_x;
     inner.content.y = content_y;
     inner.content.width = content_width;
-    layout_block(layout_box, &inner);
+    layout_block(layout_box, &inner, None);
 
     let final_height = if content_height <= 0.0 {
         layout_box.dimensions.content.height.clamp(min_height, max_height)
@@ -1020,7 +1041,7 @@ fn layout_absolute(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
 /// Layout a flex container.
 /// Computes the container's own dimensions (margin/border/padding/width/height)
 /// just like a block, then arranges children along the main axis using flex rules.
-fn layout_flex(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
+fn layout_flex(layout_box: &mut LayoutBox, containing_block: &Dimensions, positioned_ancestor: Option<&Dimensions>) {
     // ── Phase 1: compute container box like a block ──
     let styled = match &layout_box.box_type {
         BoxType::FlexNode(s) => Some(s.clone()),
@@ -1279,7 +1300,18 @@ fn layout_flex(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
             _ => {}
         }
 
-        layout(child, child_containing);
+        let child_is_positioned = match &child.box_type {
+            BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s)
+            | BoxType::FlexNode(s) | BoxType::AbsoluteNode(s) => {
+                s.specified_values.get("position").map(|v| v != "static").unwrap_or(false)
+            }
+            _ => false,
+        };
+        if child_is_positioned {
+            layout_with_context(child, child_containing, Some(&layout_box.dimensions));
+        } else {
+            layout_with_context(child, child_containing, positioned_ancestor);
+        }
 
         main_offset += size;
         if justify_content == "space-between" && total_grow == 0.0 && remaining > 0.0 && idx < final_sizes.len() - 1 {
@@ -1882,9 +1914,11 @@ mod tests {
 
     #[test]
     fn test_position_absolute_right_bottom() {
-        // Give parent explicit height so bottom positioning has room
+        // Give parent explicit height and position:relative so it establishes
+        // a positioned containing block for the absolute child.
         let mut parent_styles = HashMap::new();
         parent_styles.insert("height".to_string(), "500px".to_string());
+        parent_styles.insert("position".to_string(), "relative".to_string());
 
         let mut child_styles = HashMap::new();
         child_styles.insert("position".to_string(), "absolute".to_string());
