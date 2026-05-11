@@ -34,10 +34,10 @@ pub fn init_font_cache() {
 
 /// Get the cached font metrics.
 pub fn get_font_metrics() -> &'static FontMetrics {
-    FONT_CACHE.get_or_init(|| {
+    if FONT_CACHE.get().is_none() {
         init_font_cache();
-        FONT_CACHE.get().unwrap().clone()
-    })
+    }
+    FONT_CACHE.get().unwrap()
 }
 
 impl Clone for FontMetrics {

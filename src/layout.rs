@@ -2524,7 +2524,7 @@ mod tests {
     #[test]
     fn test_border_radius_and_opacity() {
         let html = r#"
-            <div id="box" style="width: 100px; height: 60px; background: #ff0000; border-radius: 10px; opacity: 0.5; border: 2px solid #000;">
+            <div id="box" style="width: 100px; height: 60px; background: #ff0000; border-radius: 10px; opacity: 0.5; border-width: 2px; border-color: #000;">
             </div>
         "#;
         let layout = layout_html(html);
