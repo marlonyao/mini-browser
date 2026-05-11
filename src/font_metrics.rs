@@ -53,8 +53,8 @@ impl Clone for FontMetrics {
 pub struct FontMetrics {
     /// Maps Unicode code point → advanceWidth in font units (design units)
     pub glyph_widths: std::collections::HashMap<u32, u16>,
-    units_per_em: u16,
-    font_name: String,
+    pub units_per_em: u16,
+    pub font_name: String,
 }
 
 impl FontMetrics {
@@ -334,15 +334,14 @@ mod tests {
     }
 
     #[test]
-    fn test_compare_latin_vs_cjk() {
+    fn test_i_narrower_than_m() {
         let path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc";
         if let Some(metrics) = FontMetrics::from_file(path) {
             let w_i = metrics.char_width_px('i', 16.0);
             let w_m = metrics.char_width_px('m', 16.0);
-            let w_cjk = metrics.char_width_px('中', 16.0);
-            println!("i={:.2}, m={:.2}, 中={:.2}", w_i, w_m, w_cjk);
-            // In most fonts: i < m <= CJK
-            assert!(w_i < w_m || (w_i - w_m).abs() < 0.1, "'i' should be narrower or equal to 'm'");
+            println!("i={:.2}, m={:.2}", w_i, w_m);
+            // 'i' should be significantly narrower than 'm' in any real font
+            assert!(w_i < w_m * 0.5, "'i' ({:.2}) should be much narrower than 'm' ({:.2})", w_i, w_m);
         }
     }
 }
