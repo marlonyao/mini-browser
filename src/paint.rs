@@ -175,8 +175,8 @@ fn build_display_list_inner(
 
         let font_size = parse_value(styled.specified_values.get("font-size"));
         let line_height = font_size * 1.2;
-        let char_width_cjk = font_size;
-        let char_width_latin = font_size * 0.6;
+        let metrics = crate::font_metrics::get_font_metrics();
+        
 
         let mut text_y = dim.content.y;
         let container_width = dim.content.width;
@@ -192,14 +192,7 @@ fn build_display_list_inner(
                 let mut line_width = 0.0f32;
 
                 for ch in trimmed.chars() {
-                    let ch_w = if ch as u32 >= 0x4E00 && ch as u32 <= 0x9FFF
-                        || ch as u32 >= 0x3400 && ch as u32 <= 0x4DBF
-                        || ch as u32 >= 0x3000 && ch as u32 <= 0x303F
-                        || ch as u32 >= 0xFF00 && ch as u32 <= 0xFFEF {
-                        char_width_cjk
-                    } else {
-                        char_width_latin
-                    };
+                    let ch_w = metrics.char_width_px(ch, font_size);
 
                     if line_width + ch_w > container_width && !current_line.is_empty() {
                         // Flush current line

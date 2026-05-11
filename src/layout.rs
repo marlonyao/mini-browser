@@ -421,26 +421,13 @@ fn estimate_text_width_from_children(styled: Option<&StyledNode>) -> f32 {
         let font_size = s.specified_values.get("font-size")
             .map(|v| parse_value(Some(v)))
             .unwrap_or(16.0);
-        let char_width_cjk = font_size;
-        let char_width_latin = font_size * 0.6;
+        let metrics = crate::font_metrics::get_font_metrics();
         for child in &s.children {
             if let Node::Text(text) = &child.node {
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
                     for ch in trimmed.chars() {
-                        if ch as u32 >= 0x4E00 && ch as u32 <= 0x9FFF {
-                            width += char_width_cjk;
-                        } else if ch as u32 >= 0x3400 && ch as u32 <= 0x4DBF {
-                            width += char_width_cjk;
-                        } else if ch as u32 >= 0x3000 && ch as u32 <= 0x303F {
-                            width += char_width_cjk;
-                        } else if ch as u32 >= 0xFF00 && ch as u32 <= 0xFFEF {
-                            width += char_width_cjk;
-                        } else if ch.is_whitespace() {
-                            width += char_width_latin;
-                        } else {
-                            width += char_width_latin;
-                        }
+                        width += metrics.char_width_px(ch, font_size);
                     }
                 }
             } else if let Node::Element(_) = &child.node {
@@ -489,9 +476,9 @@ fn layout_inline_node(layout_box: &mut LayoutBox, containing_block: &Dimensions)
         .map(|v| parse_value(Some(v)))
         .unwrap_or(16.0);
     let line_height = font_size * 1.2;
-    // CJK characters are roughly square (width ≈ font_size), Latin characters are narrower (≈ 0.6 * font_size)
-    let char_width_cjk = font_size;
-    let char_width_latin = font_size * 0.6;
+    
+    // Use real font metrics if available
+    let metrics = crate::font_metrics::get_font_metrics();
 
     // Measure text content from styled node children
     let mut text_width = 0.0f32;
@@ -505,22 +492,22 @@ fn layout_inline_node(layout_box: &mut LayoutBox, containing_block: &Dimensions)
                     for ch in trimmed.chars() {
                         if ch as u32 >= 0x4E00 && ch as u32 <= 0x9FFF {
                             // CJK unified ideographs
-                            width += char_width_cjk;
+                            width += metrics.char_width_px(ch, font_size);
                         } else if ch as u32 >= 0x3400 && ch as u32 <= 0x4DBF {
                             // CJK extension A
-                            width += char_width_cjk;
+                            width += metrics.char_width_px(ch, font_size);
                         } else if ch as u32 >= 0x3000 && ch as u32 <= 0x303F {
                             // CJK symbols and punctuation (full-width)
-                            width += char_width_cjk;
+                            width += metrics.char_width_px(ch, font_size);
                         } else if ch as u32 >= 0xFF00 && ch as u32 <= 0xFFEF {
                             // Fullwidth forms
-                            width += char_width_cjk;
+                            width += metrics.char_width_px(ch, font_size);
                         } else if ch.is_whitespace() {
                             // Space between words
-                            width += char_width_latin;
+                            width += metrics.char_width_px(ch, font_size);
                         } else {
                             // Latin / ASCII
-                            width += char_width_latin;
+                            width += metrics.char_width_px(ch, font_size);
                         }
                     }
                     text_width += width;
