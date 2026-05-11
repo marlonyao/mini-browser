@@ -92,6 +92,28 @@ fn main() {
     }
 
     // Debug: find some <a> tags in layout tree and print their x
+    println!("\n=== Debug: layout tree y-coords ===");
+    fn print_y_tree(layout_box: &mini_browser::layout::LayoutBox, indent: usize) {
+        use mini_browser::layout::BoxType;
+        use mini_browser::dom::Node;
+        let spaces = "  ".repeat(indent);
+        let tag = match &layout_box.box_type {
+            BoxType::BlockNode(s) | BoxType::InlineNode(s) | BoxType::InlineBlockNode(s)
+            | BoxType::FlexNode(s) | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s)
+            | BoxType::AbsoluteNode(s) | BoxType::FixedNode(s) => {
+                if let Node::Element(el) = &s.node { el.tag.clone() } else { "text".to_string() }
+            }
+            BoxType::AnonymousBlock => "anon".to_string(),
+        };
+        if layout_box.dimensions.content.y.abs() > 1.0 || layout_box.dimensions.content.height > 10.0 {
+            println!("{}{} y={:.1} h={:.1} w={:.1}", spaces, tag, layout_box.dimensions.content.y, layout_box.dimensions.content.height, layout_box.dimensions.content.width);
+        }
+        for child in &layout_box.children {
+            print_y_tree(child, indent + 1);
+        }
+    }
+    print_y_tree(&layout_root, 0);
+
     println!("\n=== Debug: <a> tags in layout tree ===");
     fn find_a_tags(layout_box: &mini_browser::layout::LayoutBox, indent: usize) {
         use mini_browser::layout::BoxType;

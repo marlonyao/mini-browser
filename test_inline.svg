@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="white"/>
+  <rect x="0.0" y="0.0" width="800.0" height="68.4" fill="rgb(238,238,238)"/>
+  <text x="15.0" y="27.2" font-size="14.4" fill="rgb(0,0,0)">新闻</text>
+  <rect x="15.0" y="28.4" width="24.0" height="1.0" fill="none" stroke="rgb(0,0,0)" stroke-width="1.0"/>
+  <text x="49.0" y="27.2" font-size="14.4" fill="rgb(0,0,0)">hao123</text>
+  <rect x="49.0" y="28.4" width="43.2" height="1.0" fill="none" stroke="rgb(0,0,0)" stroke-width="1.0"/>
+  <text x="102.2" y="27.2" font-size="14.4" fill="rgb(0,0,0)">地图</text>
+  <rect x="102.2" y="28.4" width="24.0" height="1.0" fill="none" stroke="rgb(0,0,0)" stroke-width="1.0"/>
+  <text x="136.2" y="27.2" font-size="14.4" fill="rgb(0,0,0)">贴吧</text>
+  <rect x="136.2" y="28.4" width="24.0" height="1.0" fill="none" stroke="rgb(0,0,0)" stroke-width="1.0"/>
+  <text x="170.2" y="27.2" font-size="14.4" fill="rgb(0,0,0)">视频</text>
+  <rect x="170.2" y="28.4" width="24.0" height="1.0" fill="none" stroke="rgb(0,0,0)" stroke-width="1.0"/>
+  <rect x="0.0" y="88.4" width="137.6" height="48.4" fill="rgb(76,175,80)"/>
+  <text x="5.0" y="105.6" font-size="14.4" fill="rgb(255,255,255)">中文 inline-block</text>
+  <rect x="137.6" y="88.4" width="68.0" height="48.4" fill="rgb(33,150,243)"/>
+  <text x="142.6" y="105.6" font-size="14.4" fill="rgb(255,255,255)">测试文本</text>
+</svg>

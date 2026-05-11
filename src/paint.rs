@@ -173,9 +173,10 @@ fn build_display_list_inner(
             .and_then(|v| parse_color(v))
             .unwrap_or_else(Color::black);
 
-        let font_size = parse_value(styled.specified_values.get("font-size")).max(16.0);
+        let font_size = parse_value(styled.specified_values.get("font-size"));
         let line_height = font_size * 1.2;
-        let char_width = font_size * 0.5;
+        let char_width_cjk = font_size;
+        let char_width_latin = font_size * 0.6;
 
         let mut text_y = dim.content.y;
         let container_width = dim.content.width;
@@ -186,49 +187,52 @@ fn build_display_list_inner(
                 let trimmed = text.trim();
                 if trimmed.is_empty() { continue; }
 
-                let chars_per_line = if container_width > 0.0 && char_width > 0.0 {
-                    (container_width / char_width).floor().max(1.0) as usize
-                } else {
-                    trimmed.chars().count()
-                };
+                let mut text_x = dim.content.x;
+                let mut current_line = String::new();
+                let mut line_width = 0.0f32;
 
-                let mut line_start = 0usize;
-                let text_len = trimmed.chars().count();
+                for ch in trimmed.chars() {
+                    let ch_w = if ch as u32 >= 0x4E00 && ch as u32 <= 0x9FFF
+                        || ch as u32 >= 0x3400 && ch as u32 <= 0x4DBF
+                        || ch as u32 >= 0x3000 && ch as u32 <= 0x303F
+                        || ch as u32 >= 0xFF00 && ch as u32 <= 0xFFEF {
+                        char_width_cjk
+                    } else {
+                        char_width_latin
+                    };
 
-                while line_start < text_len {
-                    let line_end = (line_start + chars_per_line).min(text_len);
-                    // Try to break at word boundary (space) if possible
-                    let mut actual_end = line_end;
-                    if actual_end < text_len {
-                        // Look backward for a space to break at
-                        let slice: String = trimmed.chars().skip(line_start).take(line_end - line_start).collect();
-                        if let Some(last_space) = slice.rfind(' ') {
-                            actual_end = line_start + last_space;
-                        }
-                    }
-
-                    let line_text: String = trimmed.chars().skip(line_start).take(actual_end - line_start).collect();
-                    let trimmed_line = line_text.trim();
-                    if !trimmed_line.is_empty() {
-                        let line_width = trimmed_line.chars().count() as f32 * char_width;
+                    if line_width + ch_w > container_width && !current_line.is_empty() {
+                        // Flush current line
                         let text_rect = Rect {
-                            x: dim.content.x,
+                            x: text_x,
                             y: text_y,
                             width: line_width,
                             height: line_height,
                         };
                         if let Some(clipped) = rect_intersect(&text_rect, clip) {
-                            list.push(DisplayCommand::Text(trimmed_line.to_string(), clipped, color.clone()));
+                            list.push(DisplayCommand::Text(current_line.trim().to_string(), clipped, color.clone()));
                         }
                         text_y += line_height;
+                        current_line.clear();
+                        line_width = 0.0;
                     }
 
-                    line_start = actual_end;
-                    // Skip leading space on next line
-                    while line_start < text_len {
-                        let ch = trimmed.chars().nth(line_start);
-                        if ch == Some(' ') { line_start += 1; } else { break; }
+                    current_line.push(ch);
+                    line_width += ch_w;
+                }
+
+                // Flush remaining
+                if !current_line.is_empty() {
+                    let text_rect = Rect {
+                        x: text_x,
+                        y: text_y,
+                        width: line_width,
+                        height: line_height,
+                    };
+                    if let Some(clipped) = rect_intersect(&text_rect, clip) {
+                        list.push(DisplayCommand::Text(current_line.trim().to_string(), clipped, color.clone()));
                     }
+                    text_y += line_height;
                 }
             }
         }

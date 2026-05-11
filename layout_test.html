@@ -13,36 +13,55 @@ th { background: #f0f0f0; }
 <h2>Source HTML</h2>
 <pre>&lt;!DOCTYPE html&gt;
 &lt;html&gt;
-&lt;head&gt;&lt;title&gt;T7 - Descendant Selector&lt;/title&gt;&lt;/head&gt;
-&lt;body style=&quot;margin:0; padding:20px;&quot;&gt;
-  &lt;style&gt;
-    .container .item { background: #2196F3; color: white; padding: 10px; margin: 5px 0; }
-    .container .item .label { background: #FF5722; padding: 5px; }
-  &lt;/style&gt;
-  &lt;h1&gt;Descendant Selector&lt;/h1&gt;
-  &lt;div class=&quot;container&quot;&gt;
-    &lt;div class=&quot;item&quot;&gt;Item 1&lt;/div&gt;
-    &lt;div class=&quot;item&quot;&gt;Item 2 &lt;span class=&quot;label&quot;&gt;Label&lt;/span&gt;&lt;/div&gt;
-    &lt;div class=&quot;item&quot;&gt;Item 3&lt;/div&gt;
+&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;/head&gt;
+&lt;body style=&quot;margin: 0; font-size: 12px;&quot;&gt;
+  &lt;div style=&quot;background: #eee; padding: 10px;&quot;&gt;
+    &lt;a style=&quot;display: inline-block; margin: 5px;&quot;&gt;新闻&lt;/a&gt;
+    &lt;a style=&quot;display: inline-block; margin: 5px;&quot;&gt;hao123&lt;/a&gt;
+    &lt;a style=&quot;display: inline-block; margin: 5px;&quot;&gt;地图&lt;/a&gt;
+    &lt;a style=&quot;display: inline-block; margin: 5px;&quot;&gt;贴吧&lt;/a&gt;
+    &lt;a style=&quot;display: inline-block; margin: 5px;&quot;&gt;视频&lt;/a&gt;
   &lt;/div&gt;
-  &lt;div class=&quot;item&quot;&gt;Outside container (should NOT be styled)&lt;/div&gt;
+  &lt;div style=&quot;margin-top: 20px;&quot;&gt;
+    &lt;span style=&quot;display: inline-block; background: #4CAF50; color: white; padding: 5px;&quot;&gt;中文 inline-block&lt;/span&gt;
+    &lt;span style=&quot;display: inline-block; background: #2196F3; color: white; padding: 5px;&quot;&gt;测试文本&lt;/span&gt;
+  &lt;/div&gt;
 &lt;/body&gt;
-&lt;/html&gt;</pre>
+&lt;/html&gt;
+</pre>
 <h2>Rendered Output</h2>
 <div class="canvas">
-<div class="text" style="left:20px;top:20px;width:152px;height:19.2px;color:rgb(0,0,0);font-size:19.2px;display:flex;align-items:center;">Descendant Selector</div>
-<div class="text" style="left:20px;top:39.2px;width:48px;height:19.2px;color:rgb(0,0,0);font-size:19.2px;display:flex;align-items:center;">Item 1</div>
-<div class="text" style="left:20px;top:58.4px;width:40px;height:19.200005px;color:rgb(0,0,0);font-size:19.200005px;display:flex;align-items:center;">Label</div>
-<div class="text" style="left:20px;top:58.4px;width:48px;height:19.200005px;color:rgb(0,0,0);font-size:19.200005px;display:flex;align-items:center;">Item 2</div>
-<div class="text" style="left:20px;top:77.600006px;width:48px;height:19.199997px;color:rgb(0,0,0);font-size:19.199997px;display:flex;align-items:center;">Item 3</div>
-<div class="text" style="left:20px;top:96.8px;width:320px;height:19.199997px;color:rgb(0,0,0);font-size:19.199997px;display:flex;align-items:center;">Outside container (should NOT be styled)</div>
+<div class="box" style="left:0px;top:0px;width:800px;height:68.4px;background:rgb(238,238,238);"></div>
+<div class="text" style="left:15px;top:15px;width:24px;height:14.400002px;color:rgb(0,0,0);font-size:14.400002px;display:flex;align-items:center;">新闻</div>
+<div class="box" style="left:15px;top:28.400002px;width:24px;height:1px;border:1px solid rgb(0,0,0);"></div>
+<div class="text" style="left:49px;top:15px;width:43.199997px;height:14.400002px;color:rgb(0,0,0);font-size:14.400002px;display:flex;align-items:center;">hao123</div>
+<div class="box" style="left:49px;top:28.400002px;width:43.199997px;height:1px;border:1px solid rgb(0,0,0);"></div>
+<div class="text" style="left:102.2px;top:15px;width:24px;height:14.400002px;color:rgb(0,0,0);font-size:14.400002px;display:flex;align-items:center;">地图</div>
+<div class="box" style="left:102.2px;top:28.400002px;width:24px;height:1px;border:1px solid rgb(0,0,0);"></div>
+<div class="text" style="left:136.2px;top:15px;width:24px;height:14.400002px;color:rgb(0,0,0);font-size:14.400002px;display:flex;align-items:center;">贴吧</div>
+<div class="box" style="left:136.2px;top:28.400002px;width:24px;height:1px;border:1px solid rgb(0,0,0);"></div>
+<div class="text" style="left:170.2px;top:15px;width:24px;height:14.400002px;color:rgb(0,0,0);font-size:14.400002px;display:flex;align-items:center;">视频</div>
+<div class="box" style="left:170.2px;top:28.400002px;width:24px;height:1px;border:1px solid rgb(0,0,0);"></div>
+<div class="box" style="left:0px;top:88.4px;width:137.59998px;height:48.4px;background:rgb(76,175,80);"></div>
+<div class="text" style="left:5px;top:93.4px;width:117.59998px;height:14.400002px;color:rgb(255,255,255);font-size:14.400002px;display:flex;align-items:center;">中文 inline-block</div>
+<div class="box" style="left:137.59998px;top:88.4px;width:68px;height:48.4px;background:rgb(33,150,243);"></div>
+<div class="text" style="left:142.59998px;top:93.4px;width:48px;height:14.400002px;color:rgb(255,255,255);font-size:14.400002px;display:flex;align-items:center;">测试文本</div>
 </div>
 <h2>Display List (first 50)</h2>
 <table><tr><th>#</th><th>Type</th><th>Rect</th><th>Details</th></tr>
-<tr><td>0</td><td>Text</td><td>20.0,20.0 152.0x19.2</td><td>'Descendant Selector' rgb(0,0,0)</td></tr>
-<tr><td>1</td><td>Text</td><td>20.0,39.2 48.0x19.2</td><td>'Item 1' rgb(0,0,0)</td></tr>
-<tr><td>2</td><td>Text</td><td>20.0,58.4 40.0x19.2</td><td>'Label' rgb(0,0,0)</td></tr>
-<tr><td>3</td><td>Text</td><td>20.0,58.4 48.0x19.2</td><td>'Item 2' rgb(0,0,0)</td></tr>
-<tr><td>4</td><td>Text</td><td>20.0,77.6 48.0x19.2</td><td>'Item 3' rgb(0,0,0)</td></tr>
-<tr><td>5</td><td>Text</td><td>20.0,96.8 320.0x19.2</td><td>'Outside container (s' rgb(0,0,0)</td></tr>
+<tr><td>0</td><td>SolidColor</td><td>0.0,0.0 800.0x68.4</td><td>rgb(238,238,238)</td></tr>
+<tr><td>1</td><td>Text</td><td>15.0,15.0 24.0x14.4</td><td>'新闻' rgb(0,0,0)</td></tr>
+<tr><td>2</td><td>Border</td><td>15.0,28.4 24.0x1.0</td><td>1px rgb(0,0,0)</td></tr>
+<tr><td>3</td><td>Text</td><td>49.0,15.0 43.2x14.4</td><td>'hao123' rgb(0,0,0)</td></tr>
+<tr><td>4</td><td>Border</td><td>49.0,28.4 43.2x1.0</td><td>1px rgb(0,0,0)</td></tr>
+<tr><td>5</td><td>Text</td><td>102.2,15.0 24.0x14.4</td><td>'地图' rgb(0,0,0)</td></tr>
+<tr><td>6</td><td>Border</td><td>102.2,28.4 24.0x1.0</td><td>1px rgb(0,0,0)</td></tr>
+<tr><td>7</td><td>Text</td><td>136.2,15.0 24.0x14.4</td><td>'贴吧' rgb(0,0,0)</td></tr>
+<tr><td>8</td><td>Border</td><td>136.2,28.4 24.0x1.0</td><td>1px rgb(0,0,0)</td></tr>
+<tr><td>9</td><td>Text</td><td>170.2,15.0 24.0x14.4</td><td>'视频' rgb(0,0,0)</td></tr>
+<tr><td>10</td><td>Border</td><td>170.2,28.4 24.0x1.0</td><td>1px rgb(0,0,0)</td></tr>
+<tr><td>11</td><td>SolidColor</td><td>0.0,88.4 137.6x48.4</td><td>rgb(76,175,80)</td></tr>
+<tr><td>12</td><td>Text</td><td>5.0,93.4 117.6x14.4</td><td>'中文 inline-block' rgb(255,255,255)</td></tr>
+<tr><td>13</td><td>SolidColor</td><td>137.6,88.4 68.0x48.4</td><td>rgb(33,150,243)</td></tr>
+<tr><td>14</td><td>Text</td><td>142.6,93.4 48.0x14.4</td><td>'测试文本' rgb(255,255,255)</td></tr>
 </table></body></html>

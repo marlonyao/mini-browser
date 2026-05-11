@@ -185,7 +185,7 @@ fn layout_with_context(
 ) {
     match layout_box.box_type {
         BoxType::BlockNode(_) | BoxType::InlineBlockNode(_) => {
-            layout_block(layout_box, &containing_block, positioned_ancestor);
+            layout_block(layout_box, &containing_block, positioned_ancestor, false);
         }
         BoxType::FlexNode(_) => {
             layout_flex(layout_box, &containing_block, positioned_ancestor);
@@ -200,7 +200,7 @@ fn layout_with_context(
             layout_float(layout_box, &containing_block.content, &mut FloatContext::default());
         }
         BoxType::AbsoluteNode(_) | BoxType::FixedNode(_) => {
-            layout_block(layout_box, &containing_block, positioned_ancestor);
+            layout_block(layout_box, &containing_block, positioned_ancestor, false);
         }
     }
     apply_relative_offset(layout_box, &containing_block);
@@ -336,7 +336,7 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
                     .map(|v| parse_length_percent(v, containing_block.content.width));
 
                 let box_sizing = get_box_sizing(styled.as_ref());
-                let content_width = match (explicit_width, box_sizing) {
+                let mut content_width = match (explicit_width, box_sizing) {
                     (Some(w), "border-box") => (w - border_left - padding_left - padding_right - border_right).max(0.0),
                     (Some(w), _) => w,
                     (None, _) => {
@@ -346,6 +346,14 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
                         auto_width.min(container_rect.width - total_horizontal).max(0.0)
                     }
                 };
+
+                // Inline-block minimum width: at least wide enough for one character
+                let font_size = styled.as_ref()
+                    .and_then(|s| s.specified_values.get("font-size"))
+                    .map(|v| parse_value(Some(v)))
+                    .unwrap_or(16.0);
+                let min_content_width = font_size; // at least one character wide
+                content_width = content_width.max(min_content_width);
 
                 // Min/max width
                 let min_width = styled.as_ref()
@@ -363,7 +371,7 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
                 ib_containing.content.x = 0.0;
                 ib_containing.content.y = 0.0;
                 ib_containing.content.width = content_width;
-                layout_block(child, &ib_containing, None);
+                layout_block(child, &ib_containing, None, true);
 
                 // Total outer size for line layout
                 let child_total_width = content_width
@@ -620,7 +628,7 @@ fn initial_containing_block() -> Dimensions {
     d
 }
 
-fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions, positioned_ancestor: Option<&Dimensions>) {
+fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions, positioned_ancestor: Option<&Dimensions>, is_shrink_to_fit: bool) {
     let styled = match &layout_box.box_type {
         BoxType::BlockNode(s) | BoxType::InlineBlockNode(s) | BoxType::InlineNode(s)
         | BoxType::FloatLeftNode(s) | BoxType::FloatRightNode(s)
@@ -645,12 +653,16 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions, posit
 
     let total_horizontal = margin_left + border_left + padding_left + padding_right + border_right + margin_right;
 
-    let content_width = match (explicit_width, box_sizing) {
-        (Some(w), "border-box") => {
-            (w - border_left - padding_left - padding_right - border_right).max(0.0)
+    let content_width = if is_shrink_to_fit {
+        containing_block.content.width
+    } else {
+        match (explicit_width, box_sizing) {
+            (Some(w), "border-box") => {
+                (w - border_left - padding_left - padding_right - border_right).max(0.0)
+            }
+            (Some(w), _) => w,
+            (None, _) => (containing_block.content.width - total_horizontal).max(0.0),
         }
-        (Some(w), _) => w,
-        (None, _) => (containing_block.content.width - total_horizontal).max(0.0),
     };
 
     // min/max-width constraints
@@ -948,7 +960,7 @@ fn layout_float(layout_box: &mut LayoutBox, container: &Rect, float_context: &mu
     inner.content.x = content_x;
     inner.content.y = y + margin_top + border_top + padding_top;
     inner.content.width = content_width;
-    layout_block(layout_box, &inner, None);
+    layout_block(layout_box, &inner, None, false);
 
     let content_height = layout_box.dimensions.content.height;
 
@@ -1103,7 +1115,7 @@ fn layout_absolute(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     inner.content.x = content_x;
     inner.content.y = content_y;
     inner.content.width = content_width;
-    layout_block(layout_box, &inner, None);
+    layout_block(layout_box, &inner, None, false);
 
     let final_height = if content_height <= 0.0 {
         layout_box.dimensions.content.height.clamp(min_height, max_height)
@@ -1790,7 +1802,7 @@ mod tests {
         let mut ib_styles = HashMap::new();
         ib_styles.insert("display".to_string(), "inline-block".to_string());
         // No explicit width; inline-block should shrink-to-fit based on content
-        // Empty element => width 0 (or small minimum)
+        // Empty element => width should be small (min-width = font_size = 16px)
         let ib = styled_element("span", ib_styles, vec![]);
 
         let parent = styled_element("div", HashMap::new(), vec![ib]);
@@ -1800,8 +1812,8 @@ mod tests {
         let anon = &root.children[0];
         let ib_box = &anon.children[0];
         assert!(matches!(ib_box.box_type, BoxType::InlineBlockNode(_)));
-        // Shrink-to-fit: empty inline-block should have near-zero width
-        assert!(ib_box.dimensions.content.width < 10.0, "inline-block should shrink-to-fit, got {}", ib_box.dimensions.content.width);
+        // Shrink-to-fit: empty inline-block should have near-zero width, but at least min font_size
+        assert!(ib_box.dimensions.content.width <= 20.0, "inline-block should shrink-to-fit, got {}", ib_box.dimensions.content.width);
     }
 
     #[test]
