@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="white"/>
+  <text x="20.0" y="36.3" font-size="19.2" fill="rgb(0,0,0)">Descendant Selector</text>
+  <rect x="20.0" y="44.2" width="760.0" height="39.2" fill="rgb(33,150,243)"/>
+  <text x="30.0" y="70.5" font-size="19.2" fill="rgb(255,255,255)">Item 1</text>
+  <rect x="20.0" y="88.4" width="760.0" height="49.2" fill="rgb(33,150,243)"/>
+  <rect x="30.0" y="98.4" width="740.0" height="29.2" fill="rgb(255,87,34)"/>
+  <text x="35.0" y="119.7" font-size="19.2" fill="rgb(0,0,0)">Label</text>
+  <text x="30.0" y="114.7" font-size="19.2" fill="rgb(255,255,255)">Item 2</text>
+  <rect x="20.0" y="142.6" width="760.0" height="39.2" fill="rgb(33,150,243)"/>
+  <text x="30.0" y="168.9" font-size="19.2" fill="rgb(255,255,255)">Item 3</text>
+  <text x="20.0" y="198.1" font-size="19.2" fill="rgb(0,0,0)">Outside container (should NOT be styled)</text>
+</svg>

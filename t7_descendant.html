@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><title>T7 - Descendant Selector</title></head>
+<body style="margin:0; padding:20px;">
+  <style>
+    .container .item { background: #2196F3; color: white; padding: 10px; margin: 5px 0; }
+    .container .item .label { background: #FF5722; padding: 5px; }
+  </style>
+  <h1>Descendant Selector</h1>
+  <div class="container">
+    <div class="item">Item 1</div>
+    <div class="item">Item 2 <span class="label">Label</span></div>
+    <div class="item">Item 3</div>
+  </div>
+  <div class="item">Outside container (should NOT be styled)</div>
+</body>
+</html>

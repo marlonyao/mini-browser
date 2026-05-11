@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="white"/>
+  <rect x="0.0" y="0.0" width="800.0" height="186.8" fill="rgb(245,245,245)"/>
+  <text x="20.0" y="36.3" font-size="19.2" fill="rgb(0,0,0)">Margin Collapsing</text>
+  <rect x="20.0" y="39.2" width="760.0" height="39.2" fill="rgb(255,255,255)"/>
+  <text x="30.0" y="65.5" font-size="19.2" fill="rgb(0,0,0)">Box 1 (margin-bottom: 30px)</text>
+  <rect x="20.0" y="108.4" width="760.0" height="39.2" fill="rgb(255,255,255)"/>
+  <text x="30.0" y="134.7" font-size="19.2" fill="rgb(0,0,0)">Box 2 (margin-top: 20px)</text>
+  <text x="20.0" y="163.9" font-size="19.2" fill="rgb(0,0,0)">Expected gap: 30px (max of 30 and 20), not 50px</text>
+</svg>

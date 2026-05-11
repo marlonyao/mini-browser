@@ -102,13 +102,17 @@ fn main() {
             | BoxType::FlexNode(styled) | BoxType::FloatLeftNode(styled) | BoxType::FloatRightNode(styled)
             | BoxType::AbsoluteNode(styled) | BoxType::FixedNode(styled) => {
                 if let Node::Element(el) = &styled.node {
-                    if el.tag == "a" || el.tag == "span" || el.tag == "div" {
-                        println!("{}<{}> x={:.1} y={:.1} w={:.1} h={:.1}",
+                    if el.tag == "a" || el.tag == "span" || el.tag == "i" {
+                        let fs = styled.specified_values.get("font-size").map(|s| s.as_str()).unwrap_or("(none)");
+                        let disp = styled.specified_values.get("display").map(|s| s.as_str()).unwrap_or("(none)");
+                        let width_val = styled.specified_values.get("width").map(|s| s.as_str()).unwrap_or("(none)");
+                        println!("{}<{}> x={:.1} y={:.1} w={:.1} h={:.1} | font-size={} display={} width={}",
                             spaces, el.tag,
                             layout_box.dimensions.content.x,
                             layout_box.dimensions.content.y,
                             layout_box.dimensions.content.width,
-                            layout_box.dimensions.content.height);
+                            layout_box.dimensions.content.height,
+                            fs, disp, width_val);
                     }
                     for child in &layout_box.children {
                         find_a_tags(child, indent + 1);

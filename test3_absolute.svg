@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="white"/>
+  <rect x="0.0" y="0.0" width="800.0" height="400.0" fill="rgb(245,245,245)"/>
+  <text x="0.0" y="16.3" font-size="19.2" fill="rgb(0,0,0)">Absolute Positioning</text>
+  <rect x="50.0" y="50.0" width="200.0" height="100.0" fill="rgb(255,87,34)"/>
+  <text x="50.0" y="66.3" font-size="19.2" fill="rgb(0,0,0)">top:50 left:50</text>
+  <rect x="550.0" y="50.0" width="200.0" height="100.0" fill="rgb(33,150,243)"/>
+  <text x="550.0" y="66.3" font-size="19.2" fill="rgb(0,0,0)">top:50 right:50</text>
+  <rect x="50.0" y="250.0" width="200.0" height="100.0" fill="rgb(76,175,80)"/>
+  <text x="50.0" y="266.3" font-size="19.2" fill="rgb(0,0,0)">bottom:50 left:50</text>
+  <rect x="550.0" y="250.0" width="200.0" height="100.0" fill="rgb(255,152,0)"/>
+  <text x="550.0" y="266.3" font-size="19.2" fill="rgb(0,0,0)">bottom:50 right:50</text>
+</svg>

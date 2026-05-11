@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="white"/>
+  <rect x="0.0" y="0.0" width="800.0" height="440.0" fill="rgb(245,245,245)"/>
+  <text x="20.0" y="36.3" font-size="19.2" fill="rgb(0,0,0)">Absolute &amp; &amp;;Fixed</text>
+  <rect x="20.0" y="20.0" width="150.0" height="80.0" fill="rgb(255,87,34)"/>
+  <text x="20.0" y="36.3" font-size="19.2" fill="rgb(255,255,255)">Top-Left</text>
+  <rect x="670.0" y="20.0" width="150.0" height="80.0" fill="rgb(33,150,243)"/>
+  <text x="670.0" y="36.3" font-size="19.2" fill="rgb(255,255,255)">Top-Right</text>
+  <rect x="20.0" y="340.0" width="150.0" height="80.0" fill="rgb(76,175,80)"/>
+  <text x="20.0" y="356.3" font-size="19.2" fill="rgb(255,255,255)">Bottom-Left</text>
+  <rect x="670.0" y="340.0" width="150.0" height="80.0" fill="rgb(255,152,0)"/>
+  <text x="670.0" y="356.3" font-size="19.2" fill="rgb(255,255,255)">Bottom-Right</text>
+</svg>

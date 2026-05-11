@@ -329,7 +329,7 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
                 child.dimensions.padding = EdgeSizes { top: padding_top, right: padding_right, bottom: padding_bottom, left: padding_left };
                 child.dimensions.border = EdgeSizes { top: border_top, right: border_right, bottom: border_bottom, left: border_left };
 
-                // Calculate width
+                // Calculate width - inline-block should shrink-to-fit if no explicit width
                 let total_horizontal = margin_left + border_left + padding_left + padding_right + border_right + margin_right;
                 let explicit_width = styled.as_ref()
                     .and_then(|s| s.specified_values.get("width"))
@@ -339,7 +339,12 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
                 let content_width = match (explicit_width, box_sizing) {
                     (Some(w), "border-box") => (w - border_left - padding_left - padding_right - border_right).max(0.0),
                     (Some(w), _) => w,
-                    (None, _) => (container_rect.width - total_horizontal).max(0.0),
+                    (None, _) => {
+                        // Shrink-to-fit: estimate width from text content
+                        let text_width = estimate_text_width_from_children(styled.as_ref());
+                        let auto_width = text_width + padding_left + padding_right + border_left + border_right;
+                        auto_width.min(container_rect.width - total_horizontal).max(0.0)
+                    }
                 };
 
                 // Min/max width
@@ -353,7 +358,7 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
                     .unwrap_or(f32::INFINITY);
                 let content_width = content_width.clamp(min_width, max_width);
 
-                // Internal block layout (relative coordinates, offset later)
+                // Re-layout with the final calculated width
                 let mut ib_containing = Dimensions::default();
                 ib_containing.content.x = 0.0;
                 ib_containing.content.y = 0.0;
@@ -402,6 +407,42 @@ fn layout_inline_block(layout_box: &mut LayoutBox, containing_block: &Dimensions
     layout_box.dimensions.content.height = current_y + line_height - layout_box.dimensions.content.y;
 }
 
+fn estimate_text_width_from_children(styled: Option<&StyledNode>) -> f32 {
+    let mut width = 0.0f32;
+    if let Some(s) = styled {
+        let font_size = s.specified_values.get("font-size")
+            .map(|v| parse_value(Some(v)))
+            .unwrap_or(16.0);
+        let char_width_cjk = font_size;
+        let char_width_latin = font_size * 0.6;
+        for child in &s.children {
+            if let Node::Text(text) = &child.node {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    for ch in trimmed.chars() {
+                        if ch as u32 >= 0x4E00 && ch as u32 <= 0x9FFF {
+                            width += char_width_cjk;
+                        } else if ch as u32 >= 0x3400 && ch as u32 <= 0x4DBF {
+                            width += char_width_cjk;
+                        } else if ch as u32 >= 0x3000 && ch as u32 <= 0x303F {
+                            width += char_width_cjk;
+                        } else if ch as u32 >= 0xFF00 && ch as u32 <= 0xFFEF {
+                            width += char_width_cjk;
+                        } else if ch.is_whitespace() {
+                            width += char_width_latin;
+                        } else {
+                            width += char_width_latin;
+                        }
+                    }
+                }
+            } else if let Node::Element(_) = &child.node {
+                width += estimate_text_width_from_children(Some(child));
+            }
+        }
+    }
+    width
+}
+
 fn layout_inline_node(layout_box: &mut LayoutBox, containing_block: &Dimensions) {
     let styled = match &layout_box.box_type {
         BoxType::InlineNode(s) => Some(s.clone()),
@@ -440,7 +481,9 @@ fn layout_inline_node(layout_box: &mut LayoutBox, containing_block: &Dimensions)
         .map(|v| parse_value(Some(v)))
         .unwrap_or(16.0);
     let line_height = font_size * 1.2;
-    let char_width = font_size * 0.5;
+    // CJK characters are roughly square (width ≈ font_size), Latin characters are narrower (≈ 0.6 * font_size)
+    let char_width_cjk = font_size;
+    let char_width_latin = font_size * 0.6;
 
     // Measure text content from styled node children
     let mut text_width = 0.0f32;
@@ -450,8 +493,29 @@ fn layout_inline_node(layout_box: &mut LayoutBox, containing_block: &Dimensions)
             if let Node::Text(text) = &child.node {
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
-                    let chars = trimmed.chars().count() as f32;
-                    text_width += chars * char_width;
+                    let mut width = 0.0f32;
+                    for ch in trimmed.chars() {
+                        if ch as u32 >= 0x4E00 && ch as u32 <= 0x9FFF {
+                            // CJK unified ideographs
+                            width += char_width_cjk;
+                        } else if ch as u32 >= 0x3400 && ch as u32 <= 0x4DBF {
+                            // CJK extension A
+                            width += char_width_cjk;
+                        } else if ch as u32 >= 0x3000 && ch as u32 <= 0x303F {
+                            // CJK symbols and punctuation (full-width)
+                            width += char_width_cjk;
+                        } else if ch as u32 >= 0xFF00 && ch as u32 <= 0xFFEF {
+                            // Fullwidth forms
+                            width += char_width_cjk;
+                        } else if ch.is_whitespace() {
+                            // Space between words
+                            width += char_width_latin;
+                        } else {
+                            // Latin / ASCII
+                            width += char_width_latin;
+                        }
+                    }
+                    text_width += width;
                     text_height = line_height;
                 }
             }
@@ -625,6 +689,30 @@ fn layout_block(layout_box: &mut LayoutBox, containing_block: &Dimensions, posit
 
     layout_box.dimensions.content.x = containing_block.content.x + margin_left + border_left + padding_left;
     layout_box.dimensions.content.y = containing_block.content.y + margin_top + border_top + padding_top;
+
+    // ── Height helpers (for explicit / min / max) ────────
+    let explicit_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("height"))
+        .map(|v| parse_length_percent(v, containing_block.content.height));
+    let min_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("min-height"))
+        .map(|v| parse_length_percent(v, containing_block.content.height))
+        .unwrap_or(0.0);
+    let max_height = styled.as_ref()
+        .and_then(|s| s.specified_values.get("max-height"))
+        .map(|v| parse_length_percent(v, containing_block.content.height))
+        .unwrap_or(f32::INFINITY);
+
+    // Pre-calculate explicit height so children with percentage heights
+    // can resolve against a real containing-block height during layout.
+    if let Some(h) = explicit_height {
+        let content_h = if box_sizing == "border-box" {
+            (h - border_top - padding_top - padding_bottom - border_bottom).max(0.0)
+        } else {
+            h
+        };
+        layout_box.dimensions.content.height = content_h.clamp(min_height, max_height);
+    }
 
     // ── Children layout with margin collapsing + floats ─────────
     let mut float_context = FloatContext::default();
@@ -1068,6 +1156,10 @@ fn layout_flex(layout_box: &mut LayoutBox, containing_block: &Dimensions, positi
         (Some(w), _) => w,
         (None, _) => (containing_block.content.width - total_horizontal).max(0.0),
     };
+    
+    // DEBUG
+    eprintln!("DEBUG layout_block: cb_width={}, total_h={}, content_width={}, explicit={:?}",
+        containing_block.content.width, total_horizontal, content_width, explicit_width);
 
     let min_width = styled.as_ref()
         .and_then(|s| s.specified_values.get("min-width"))
@@ -1135,9 +1227,13 @@ fn layout_flex(layout_box: &mut LayoutBox, containing_block: &Dimensions, positi
         .and_then(|s| s.specified_values.get("align-items"))
         .map(|v| v.as_str())
         .unwrap_or("stretch");
-
     let is_row = flex_direction == "row" || flex_direction == "row-reverse";
     let reverse = flex_direction == "row-reverse" || flex_direction == "column-reverse";
+
+    let gap = styled.as_ref()
+        .and_then(|s| s.specified_values.get("gap"))
+        .map(|v| parse_length_percent(v, if is_row { content_width } else { content_height }))
+        .unwrap_or(0.0);
 
     // ── Phase 3: measure each flex item ──
     let mut item_infos: Vec<(usize, f32, f32, f32)> = Vec::new(); // (index, basis, grow, shrink)
@@ -1313,10 +1409,7 @@ fn layout_flex(layout_box: &mut LayoutBox, containing_block: &Dimensions, positi
             layout_with_context(child, child_containing, positioned_ancestor);
         }
 
-        main_offset += size;
-        if justify_content == "space-between" && total_grow == 0.0 && remaining > 0.0 && idx < final_sizes.len() - 1 {
-            main_offset += gap;
-        }
+        main_offset += size + gap;
     }
 
     // ── Phase 6: auto height for flex container ──
@@ -1696,7 +1789,8 @@ mod tests {
     fn test_layout_inline_block_auto_width() {
         let mut ib_styles = HashMap::new();
         ib_styles.insert("display".to_string(), "inline-block".to_string());
-        // No explicit width; should use available width (800 - margins - borders - padding)
+        // No explicit width; inline-block should shrink-to-fit based on content
+        // Empty element => width 0 (or small minimum)
         let ib = styled_element("span", ib_styles, vec![]);
 
         let parent = styled_element("div", HashMap::new(), vec![ib]);
@@ -1706,8 +1800,8 @@ mod tests {
         let anon = &root.children[0];
         let ib_box = &anon.children[0];
         assert!(matches!(ib_box.box_type, BoxType::InlineBlockNode(_)));
-        // Auto width in 800px viewport => 800.0 (no margin/padding/border on inline-block)
-        assert_eq!(ib_box.dimensions.content.width, 800.0);
+        // Shrink-to-fit: empty inline-block should have near-zero width
+        assert!(ib_box.dimensions.content.width < 10.0, "inline-block should shrink-to-fit, got {}", ib_box.dimensions.content.width);
     }
 
     #[test]

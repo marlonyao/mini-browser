@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="white"/>
+  <text x="0.0" y="16.3" font-size="19.2" fill="rgb(0,0,0)">Flex Row</text>
+  <text x="0.0" y="35.5" font-size="19.2" fill="rgb(0,0,0)">A</text>
+  <text x="0.0" y="35.5" font-size="19.2" fill="rgb(0,0,0)">B</text>
+  <text x="0.0" y="35.5" font-size="19.2" fill="rgb(0,0,0)">C</text>
+</svg>

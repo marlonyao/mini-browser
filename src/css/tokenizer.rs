@@ -132,10 +132,10 @@ fn read_number(chars: &mut std::iter::Peekable<impl Iterator<Item = char>>) -> C
 
     let num: f64 = num_str.parse().unwrap_or(0.0);
 
-    // Check for unit
+    // Check for unit (including %)
     let mut unit = String::new();
     while let Some(&c) = chars.peek() {
-        if is_name_char(c) {
+        if is_name_char(c) || c == '%' {
             unit.push(c);
             chars.next();
         } else {
@@ -308,3 +308,10 @@ mod tests {
         );
     }
 }
+
+    #[test]
+    fn test_tokenize_percent() {
+        let tokens = tokenize("html{height:100%}");
+        println!("{:?}", tokens);
+        assert!(tokens.iter().any(|t| matches!(t, CssToken::Unit(100.0, u) if u == "%")));
+    }

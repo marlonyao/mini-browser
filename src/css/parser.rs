@@ -223,6 +223,40 @@ fn expand_shorthand(decl: Declaration) -> Vec<Declaration> {
         "border-color" => expand_box("border", &parts).into_iter().map(|d| {
             Declaration { property: format!("{}-color", d.property), value: d.value }
         }).collect(),
+        "flex" => {
+            // flex: none | [ <flex-grow> <flex-shrink>? || <flex-basis> ]
+            // Single value: flex-grow (shrink=1, basis=0%)
+            // Two values: grow shrink (basis=0%)
+            // Three values: grow shrink basis
+            match parts.len() {
+                1 => {
+                    if parts[0] == "none" {
+                        vec![
+                            Declaration { property: "flex-grow".to_string(), value: "0".to_string() },
+                            Declaration { property: "flex-shrink".to_string(), value: "0".to_string() },
+                            Declaration { property: "flex-basis".to_string(), value: "auto".to_string() },
+                        ]
+                    } else {
+                        vec![
+                            Declaration { property: "flex-grow".to_string(), value: parts[0].to_string() },
+                            Declaration { property: "flex-shrink".to_string(), value: "1".to_string() },
+                            Declaration { property: "flex-basis".to_string(), value: "0%".to_string() },
+                        ]
+                    }
+                }
+                2 => vec![
+                    Declaration { property: "flex-grow".to_string(), value: parts[0].to_string() },
+                    Declaration { property: "flex-shrink".to_string(), value: parts[1].to_string() },
+                    Declaration { property: "flex-basis".to_string(), value: "0%".to_string() },
+                ],
+                3 => vec![
+                    Declaration { property: "flex-grow".to_string(), value: parts[0].to_string() },
+                    Declaration { property: "flex-shrink".to_string(), value: parts[1].to_string() },
+                    Declaration { property: "flex-basis".to_string(), value: parts[2].to_string() },
+                ],
+                _ => vec![decl],
+            }
+        }
         _ => vec![decl],
     }
 }

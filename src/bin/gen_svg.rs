@@ -1,6 +1,6 @@
 use mini_browser::html::parser::parse_html;
 use mini_browser::css::parser::parse_css;
-use mini_browser::style::style_tree;
+use mini_browser::style::{style_tree, extract_inline_styles};
 use mini_browser::layout::{build_layout_tree, layout as layout_fn, Dimensions, Rect};
 use mini_browser::paint::build_display_list;
 use std::fs;
@@ -39,7 +39,10 @@ fn main() {
     };
 
     let dom = parse_html(&html);
-    let stylesheet = parse_css("");
+    let mut stylesheet = parse_css("");
+    // Extract inline <style> tags
+    let inline_rules = extract_inline_styles(&dom);
+    stylesheet.rules.extend(inline_rules);
     let styled = style_tree(&dom, &stylesheet);
     let mut layout_box = build_layout_tree(&styled);
     let viewport = Dimensions {

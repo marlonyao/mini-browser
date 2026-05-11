@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="white"/>
+  <text x="20.0" y="36.3" font-size="19.2" fill="rgb(0,0,0)">Block &amp; &amp;;Inline</text>
+  <rect x="20.0" y="39.2" width="760.0" height="19.2" fill="rgb(255,255,0)"/>
+  <text x="20.0" y="55.5" font-size="19.2" fill="rgb(0,0,0)">inline span</text>
+  <text x="20.0" y="55.5" font-size="19.2" fill="rgb(0,0,0)">This is a paragraph with</text>
+  <text x="20.0" y="74.7" font-size="19.2" fill="rgb(0,0,0)">inside.</text>
+  <rect x="20.0" y="58.4" width="220.0" height="120.0" fill="rgb(33,150,243)"/>
+  <text x="30.0" y="84.7" font-size="19.2" fill="rgb(255,255,255)">Fixed 200x100 block with</text>
+  <text x="30.0" y="103.9" font-size="19.2" fill="rgb(255,255,255)">padding</text>
+  <rect x="20.0" y="178.4" width="150.0" height="50.0" fill="rgb(76,175,80)"/>
+  <text x="20.0" y="194.7" font-size="19.2" fill="rgb(255,255,255)">Inline-block</text>
+  <text x="20.0" y="213.9" font-size="19.2" fill="rgb(255,255,255)">150x50</text>
+  <rect x="20.0" y="228.4" width="760.0" height="29.2" fill="rgb(255,87,34)"/>
+  <text x="25.0" y="249.7" font-size="19.2" fill="rgb(255,255,255)">Another inline</text>
+</svg>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="white"/>
+  <text x="0.0" y="16.3" font-size="19.2" fill="rgb(51,51,51)">Basic Block Layout</text>
+  <rect x="0.0" y="19.2" width="800.0" height="19.2" fill="rgb(224,224,224)"/>
+  <text x="0.0" y="35.5" font-size="19.2" fill="rgb(0,0,0)">Paragraph inside padded div</text>
+  <rect x="0.0" y="38.4" width="300.0" height="100.0" fill="rgb(76,175,80)"/>
+  <text x="0.0" y="54.7" font-size="19.2" fill="rgb(0,0,0)">Fixed 300x100 block</text>
+  <rect x="0.0" y="138.4" width="800.0" height="19.2" fill="rgb(33,150,243)"/>
+  <text x="0.0" y="154.7" font-size="19.2" fill="rgb(255,255,255)">Blue block with padding</text>
+</svg>
