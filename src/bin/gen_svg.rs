@@ -6,41 +6,15 @@ use mini_browser::paint::build_display_list;
 use std::fs;
 
 fn main() {
-    let html = if let Some(path) = std::env::args().nth(1) {
-        std::fs::read_to_string(&path).expect("Failed to read HTML file")
-    } else {
-        r#"
-<!DOCTYPE html>
-<html>
-<head><title>Layout Test</title></head>
-<body style="margin: 20px; font-family: sans-serif;">
-    <h1 style="color: #333;">Block Layout Test</h1>
-    <div style="background: #e0e0e0; padding: 20px; margin: 10px 0;">
-        <p style="margin: 0;">This is a paragraph inside a div with padding.</p>
-    </div>
-    <div style="width: 300px; height: 100px; background: #4CAF50; margin: 20px auto;">
-        Fixed size block
-    </div>
-    <div style="display: inline-block; background: #2196F3; padding: 10px; margin: 5px;">
-        Inline Block 1
-    </div>
-    <div style="display: inline-block; background: #FF9800; padding: 10px; margin: 5px;">
-        Inline Block 2
-    </div>
-    <div style="display: inline-block; background: #9C27B0; padding: 10px; margin: 5px;">
-        Inline Block 3
-    </div>
-    <p style="margin-top: 30px;">
-        <span style="background: yellow;">Highlighted text</span> in a paragraph.
-    </p>
-</body>
-</html>
-"#.to_string()
-    };
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        println!("Usage: {} <html_file> [svg_output] [html_output]", args[0]);
+        return;
+    }
 
+    let html = std::fs::read_to_string(&args[1]).expect("Failed to read HTML file");
     let dom = parse_html(&html);
     let mut stylesheet = parse_css("");
-    // Extract inline <style> tags
     let inline_rules = extract_inline_styles(&dom);
     stylesheet.rules.extend(inline_rules);
     let styled = style_tree(&dom, &stylesheet);
@@ -54,8 +28,8 @@ fn main() {
     layout_fn(&mut layout_box, viewport);
     let display_list = build_display_list(&layout_box);
 
-    let svg_path = std::env::args().nth(2).unwrap_or_else(|| "layout_test.svg".to_string());
-    let html_path = std::env::args().nth(3).unwrap_or_else(|| "layout_test.html".to_string());
+    let svg_path = args.get(2).cloned().unwrap_or_else(|| "output.svg".to_string());
+    let html_path = args.get(3).cloned().unwrap_or_else(|| "output.html".to_string());
 
     // Export as SVG
     let mut svg = String::new();
@@ -65,14 +39,27 @@ fn main() {
 
     for cmd in &display_list {
         match cmd {
-            mini_browser::paint::DisplayCommand::SolidColor(rect, color) => {
+            mini_browser::paint::DisplayCommand::SolidColor(rect, color, radius) => {
                 let r = (color.r * 255.0) as u8;
                 let g = (color.g * 255.0) as u8;
                 let b = (color.b * 255.0) as u8;
-                let line = format!(
-                    "  <rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({},{},{})\"/>\n",
-                    rect.x, rect.y, rect.width, rect.height, r, g, b
-                );
+                let a = color.a.clamp(0.0, 1.0);
+                let radius_attr = if *radius > 0.0 {
+                    format!(" rx=\"{:.1}\" ry=\"{:.1}\"", radius, radius)
+                } else {
+                    String::new()
+                };
+                let line = if a < 1.0 {
+                    format!(
+                        "  <rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\"{} fill=\"rgb({},{},{})\" opacity=\"{:.2}\"/>\n",
+                        rect.x, rect.y, rect.width, rect.height, radius_attr, r, g, b, a
+                    )
+                } else {
+                    format!(
+                        "  <rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\"{} fill=\"rgb({},{},{})\"/>\n",
+                        rect.x, rect.y, rect.width, rect.height, radius_attr, r, g, b
+                    )
+                };
                 svg.push_str(&line);
             }
             mini_browser::paint::DisplayCommand::Text(text, rect, color) => {
@@ -88,14 +75,27 @@ fn main() {
                 );
                 svg.push_str(&line);
             }
-            mini_browser::paint::DisplayCommand::Border(rect, width, color) => {
+            mini_browser::paint::DisplayCommand::Border(rect, width, color, radius) => {
                 let r = (color.r * 255.0) as u8;
                 let g = (color.g * 255.0) as u8;
                 let b = (color.b * 255.0) as u8;
-                let line = format!(
-                    "  <rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"none\" stroke=\"rgb({},{},{})\" stroke-width=\"{:.1}\"/>\n",
-                    rect.x, rect.y, rect.width, rect.height, r, g, b, width
-                );
+                let a = color.a.clamp(0.0, 1.0);
+                let radius_attr = if *radius > 0.0 {
+                    format!(" rx=\"{:.1}\" ry=\"{:.1}\"", radius, radius)
+                } else {
+                    String::new()
+                };
+                let line = if a < 1.0 {
+                    format!(
+                        "  <rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\"{} fill=\"none\" stroke=\"rgb({},{},{})\" stroke-width=\"{:.1}\" opacity=\"{:.2}\"/>\n",
+                        rect.x, rect.y, rect.width, rect.height, radius_attr, r, g, b, width, a
+                    )
+                } else {
+                    format!(
+                        "  <rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\"{} fill=\"none\" stroke=\"rgb({},{},{})\" stroke-width=\"{:.1}\"/>\n",
+                        rect.x, rect.y, rect.width, rect.height, radius_attr, r, g, b, width
+                    )
+                };
                 svg.push_str(&line);
             }
             mini_browser::paint::DisplayCommand::Image(_, rect, _) => {
@@ -162,30 +162,30 @@ fn generate_html_report(html_src: &str, path: &str) {
 
     for cmd in &display_list {
         match cmd {
-            mini_browser::paint::DisplayCommand::SolidColor(rect, color) => {
+            mini_browser::paint::DisplayCommand::SolidColor(rect, color, _radius) => {
                 html.push_str(&format!(
-                    "<div class=\"box\" style=\"left:{}px;top:{}px;width:{}px;height:{}px;background:rgb({},{},{});\"></div>\n",
+                    "<div class=\"box\" style=\"left:{}px;top:{}px;width:{}px;height:{}px;background:rgba({},{},{},{});\">\n",
                     rect.x, rect.y, rect.width, rect.height,
                     (color.r * 255.0) as u8,
                     (color.g * 255.0) as u8,
-                    (color.b * 255.0) as u8
+                    (color.b * 255.0) as u8,
+                    color.a
                 ));
             }
             mini_browser::paint::DisplayCommand::Text(text, rect, color) => {
                 if rect.width < 1.0 || rect.height < 1.0 { continue; }
                 html.push_str(&format!(
-                    "<div class=\"text\" style=\"left:{}px;top:{}px;width:{}px;height:{}px;color:rgb({},{},{});font-size:{}px;display:flex;align-items:center;\">{}</div>\n",
+                    "<div class=\"text\" style=\"left:{}px;top:{}px;width:{}px;height:{}px;color:rgb({},{},{});font-size:{}px;display:flex;align-items:center;\">\n",
                     rect.x, rect.y, rect.width, rect.height,
                     (color.r * 255.0) as u8,
                     (color.g * 255.0) as u8,
                     (color.b * 255.0) as u8,
-                    rect.height,
-                    html_escape(text)
+                    rect.height
                 ));
             }
-            mini_browser::paint::DisplayCommand::Border(rect, width, color) => {
+            mini_browser::paint::DisplayCommand::Border(rect, width, color, _radius) => {
                 html.push_str(&format!(
-                    "<div class=\"box\" style=\"left:{}px;top:{}px;width:{}px;height:{}px;border:{}px solid rgb({},{},{});\"></div>\n",
+                    "<div class=\"box\" style=\"left:{}px;top:{}px;width:{}px;height:{}px;border:{}px solid rgb({},{},{});\">\n",
                     rect.x, rect.y, rect.width, rect.height, width,
                     (color.r * 255.0) as u8,
                     (color.g * 255.0) as u8,
@@ -195,7 +195,7 @@ fn generate_html_report(html_src: &str, path: &str) {
             mini_browser::paint::DisplayCommand::Image(_, rect, alt) => {
                 let alt_text = alt.as_ref().map(|s| s.as_str()).unwrap_or("[img]");
                 html.push_str(&format!(
-                    "<div class=\"box\" style=\"left:{}px;top:{}px;width:{}px;height:{}px;background:#ddd;border:1px solid #999;display:flex;align-items:center;justify-content:center;font-size:12px;color:#666;\">{}</div>\n",
+                    "<div class=\"box\" style=\"left:{}px;top:{}px;width:{}px;height:{}px;background:#ddd;border:1px solid #999;display:flex;align-items:center;justify-content:center;font-size:12px;color:#666;\">{}\n",
                     rect.x, rect.y, rect.width, rect.height,
                     html_escape(alt_text)
                 ));
@@ -209,7 +209,7 @@ fn generate_html_report(html_src: &str, path: &str) {
 
     for (i, cmd) in display_list.iter().take(50).enumerate() {
         let (type_name, rect, detail) = match cmd {
-            mini_browser::paint::DisplayCommand::SolidColor(r, c) => (
+            mini_browser::paint::DisplayCommand::SolidColor(r, c, _) => (
                 "SolidColor",
                 r,
                 format!("rgb({:.0},{:.0},{:.0})", c.r * 255.0, c.g * 255.0, c.b * 255.0)
@@ -219,7 +219,7 @@ fn generate_html_report(html_src: &str, path: &str) {
                 r,
                 format!("'{}' rgb({:.0},{:.0},{:.0})", t.chars().take(20).collect::<String>(), c.r * 255.0, c.g * 255.0, c.b * 255.0)
             ),
-            mini_browser::paint::DisplayCommand::Border(r, w, c) => (
+            mini_browser::paint::DisplayCommand::Border(r, w, c, _) => (
                 "Border",
                 r,
                 format!("{}px rgb({:.0},{:.0},{:.0})", w, c.r * 255.0, c.g * 255.0, c.b * 255.0)

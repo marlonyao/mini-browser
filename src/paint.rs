@@ -1,4 +1,5 @@
 use crate::dom::Node;
+use crate::style::StyledNode;
 use crate::layout::{parse_value, BoxType, LayoutBox, Rect};
 use serde::Serialize;
 
@@ -21,9 +22,9 @@ impl Color {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum DisplayCommand {
-    SolidColor(Rect, Color),
+    SolidColor(Rect, Color, f32), // rect, color, border_radius
     Text(String, Rect, Color),
-    Border(Rect, f32, Color),
+    Border(Rect, f32, Color, f32), // rect, width, color, border_radius
     /// Image placeholder: (url_or_src, rect, alt_text)
     Image(String, Rect, Option<String>),
 }
@@ -90,6 +91,12 @@ fn parse_rgb(value: &str) -> Option<Color> {
     Some(Color::new(r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0), 1.0))
 }
 
+fn get_border_radius(styled: Option<&StyledNode>) -> f32 {
+    styled.and_then(|s| s.specified_values.get("border-radius"))
+        .map(|v| parse_value(Some(v)))
+        .unwrap_or(0.0)
+}
+
 pub fn build_display_list(layout_root: &LayoutBox) -> Vec<DisplayCommand> {
     let mut list = Vec::new();
     let viewport_clip = Rect { x: 0.0, y: 0.0, width: f32::MAX, height: f32::MAX };
@@ -116,7 +123,14 @@ fn build_display_list_inner(
         s.specified_values.get("background-color")
             .or_else(|| s.specified_values.get("background"))
     }) {
-        if let Some(color) = parse_color(bg) {
+        if let Some(mut color) = parse_color(bg) {
+            // Apply opacity
+            let opacity = styled.and_then(|s| s.specified_values.get("opacity"))
+                .map(|v| v.parse::<f32>().unwrap_or(1.0).clamp(0.0, 1.0))
+                .unwrap_or(1.0);
+            color.a *= opacity;
+            
+            let radius = get_border_radius(styled);
             let rect = Rect {
                 x: dim.content.x - dim.padding.left,
                 y: dim.content.y - dim.padding.top,
@@ -124,7 +138,7 @@ fn build_display_list_inner(
                 height: dim.content.height + dim.padding.top + dim.padding.bottom,
             };
             if let Some(clipped) = rect_intersect(&rect, clip) {
-                list.push(DisplayCommand::SolidColor(clipped, color));
+                list.push(DisplayCommand::SolidColor(clipped, color, radius));
             }
         }
     }
@@ -139,7 +153,13 @@ fn build_display_list_inner(
             if let Some(color_val) = styled.specified_values.get("border-color")
                 .or_else(|| styled.specified_values.get("border-top-color"))
             {
-                if let Some(color) = parse_color(color_val) {
+                if let Some(mut color) = parse_color(color_val) {
+                    let opacity = styled.specified_values.get("opacity")
+                        .map(|v| v.parse::<f32>().unwrap_or(1.0).clamp(0.0, 1.0))
+                        .unwrap_or(1.0);
+                    color.a *= opacity;
+                    
+                    let radius = get_border_radius(Some(styled));
                     let rect = Rect {
                         x: dim.content.x - dim.padding.left - dim.border.left,
                         y: dim.content.y - dim.padding.top - dim.border.top,
@@ -149,7 +169,7 @@ fn build_display_list_inner(
                               + dim.border.top + dim.border.bottom,
                     };
                     if let Some(clipped) = rect_intersect(&rect, clip) {
-                        list.push(DisplayCommand::Border(clipped, border_width, color));
+                        list.push(DisplayCommand::Border(clipped, border_width, color, radius));
                     }
                 }
             }
@@ -187,7 +207,7 @@ fn build_display_list_inner(
                 let trimmed = text.trim();
                 if trimmed.is_empty() { continue; }
 
-                let mut text_x = dim.content.x;
+                let text_x = dim.content.x;
                 let mut current_line = String::new();
                 let mut line_width = 0.0f32;
 
@@ -240,7 +260,7 @@ fn build_display_list_inner(
                     height: 1.0,
                 };
                 if let Some(clipped) = rect_intersect(&underline_rect, clip) {
-                    list.push(DisplayCommand::Border(clipped, 1.0, color));
+                    list.push(DisplayCommand::Border(clipped, 1.0, color, 0.0));
                 }
             }
             // 6. Input placeholder
@@ -259,9 +279,9 @@ fn build_display_list_inner(
                     };
                     if let Some(clipped) = rect_intersect(&input_rect, clip) {
                         // White background
-                        list.push(DisplayCommand::SolidColor(clipped.clone(), Color::new(1.0, 1.0, 1.0, 1.0)));
+                        list.push(DisplayCommand::SolidColor(clipped.clone(), Color::new(1.0, 1.0, 1.0, 1.0), 0.0));
                         // Gray border
-                        list.push(DisplayCommand::Border(clipped.clone(), 1.0, Color::new(0.7, 0.7, 0.7, 1.0)));
+                        list.push(DisplayCommand::Border(clipped.clone(), 1.0, Color::new(0.7, 0.7, 0.7, 1.0), 0.0));
                         // Text inside
                         if !value.is_empty() {
                             let text_rect = Rect {

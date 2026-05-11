@@ -1540,6 +1540,10 @@ pub fn print_layout_box(layout_box: &LayoutBox, indent: usize) {
 mod tests {
     use super::*;
     use crate::dom::Element;
+    use crate::paint::{build_display_list, DisplayCommand};
+    use crate::html::parser::parse_html;
+    use crate::css::parser::parse_css;
+    use crate::style::style_tree;
     use std::collections::HashMap;
 
     fn styled_element(tag: &str, styles: HashMap<String, String>, children: Vec<StyledNode>) -> StyledNode {
@@ -1548,6 +1552,15 @@ mod tests {
             specified_values: styles,
             children,
         }
+    }
+
+    fn layout_html(html: &str) -> LayoutBox {
+        let dom = parse_html(html);
+        let stylesheet = parse_css("");
+        let styled = style_tree(&dom, &stylesheet);
+        let mut root = build_layout_tree(&styled);
+        layout(&mut root, viewport());
+        root
     }
 
     fn viewport() -> Dimensions {
@@ -2504,5 +2517,41 @@ mod tests {
         assert!(matches!(fixed_child.box_type, BoxType::FixedNode(_)));
         // Sibling should start at y=0 (fixed removed from flow)
         assert_eq!(sibling_child.dimensions.content.y, 0.0);
+    }
+
+    // ── border-radius + opacity test ───────────────────
+
+    #[test]
+    fn test_border_radius_and_opacity() {
+        let html = r#"
+            <div id="box" style="width: 100px; height: 60px; background: #ff0000; border-radius: 10px; opacity: 0.5; border: 2px solid #000;">
+            </div>
+        "#;
+        let layout = layout_html(html);
+        let list = build_display_list(&layout);
+
+        // Find the background and border commands
+        let bg = list.iter().find_map(|cmd| match cmd {
+            DisplayCommand::SolidColor(r, c, rad) if r.width == 100.0 => Some((r.clone(), c.clone(), *rad)),
+            _ => None,
+        });
+        let border = list.iter().find_map(|cmd| match cmd {
+            DisplayCommand::Border(r, w, c, rad) if *w == 2.0 => Some((r.clone(), *w, c.clone(), *rad)),
+            _ => None,
+        });
+
+        assert!(bg.is_some(), "background command not found");
+        let (rect, color, radius) = bg.unwrap();
+        assert_eq!(rect.width, 100.0);
+        assert_eq!(rect.height, 60.0);
+        assert_eq!(radius, 10.0, "border-radius should be 10px");
+        // opacity 0.5 applied to color alpha
+        assert!(color.a < 1.0, "opacity should reduce alpha: got {}", color.a);
+        assert!(color.a > 0.0, "alpha should not be zero");
+
+        assert!(border.is_some(), "border command not found");
+        let (_, _, bcolor, bradius) = border.unwrap();
+        assert_eq!(bradius, 10.0, "border should also have radius");
+        assert!(bcolor.a < 1.0, "border should also respect opacity");
     }
 }
