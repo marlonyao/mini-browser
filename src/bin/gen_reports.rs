@@ -45,7 +45,7 @@ fn render_html_to_report(name: &str, html: &str, css: &str) {
 
     for cmd in &display_list {
         match cmd {
-            mini_browser::paint::DisplayCommand::SolidColor(rect, color) => {
+            mini_browser::paint::DisplayCommand::SolidColor(rect, color, _) => {
                 out.push_str(&format!(
                     "<div class=\"box\" style=\"left:{}px;top:{}px;width:{}px;height:{}px;background:rgba({},{},{},{});\"></div>\n",
                     rect.x, rect.y, rect.width, rect.height,
@@ -69,7 +69,7 @@ fn render_html_to_report(name: &str, html: &str, css: &str) {
                     html_escape(text)
                 ));
             }
-            mini_browser::paint::DisplayCommand::Border(rect, width, color) => {
+            mini_browser::paint::DisplayCommand::Border(rect, width, color, _) => {
                 out.push_str(&format!(
                     "<div class=\"box\" style=\"left:{}px;top:{}px;width:{}px;height:{}px;border:{}px solid rgba({},{},{},{});\"></div>\n",
                     rect.x, rect.y, rect.width, rect.height, width,
@@ -105,7 +105,7 @@ fn render_html_to_report(name: &str, html: &str, css: &str) {
 
     for (i, cmd) in display_list.iter().enumerate() {
         let (type_name, rect, detail) = match cmd {
-            mini_browser::paint::DisplayCommand::SolidColor(r, c) => (
+            mini_browser::paint::DisplayCommand::SolidColor(r, c, _) => (
                 "SolidColor",
                 r,
                 format!("rgba({:.0},{:.0},{:.0},{:.2})", c.r * 255.0, c.g * 255.0, c.b * 255.0, c.a)
@@ -115,7 +115,7 @@ fn render_html_to_report(name: &str, html: &str, css: &str) {
                 r,
                 format!("'{}' rgba({:.0},{:.0},{:.0},{:.2})", &t[..t.len().min(30)], c.r * 255.0, c.g * 255.0, c.b * 255.0, c.a)
             ),
-            mini_browser::paint::DisplayCommand::Border(r, w, c) => (
+            mini_browser::paint::DisplayCommand::Border(r, w, c, _) => (
                 "Border",
                 r,
                 format!("{}px rgba({:.0},{:.0},{:.0},{:.2})", w, c.r * 255.0, c.g * 255.0, c.b * 255.0, c.a)

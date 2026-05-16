@@ -64,9 +64,9 @@ fn main() {
     for cmd in &display_list {
         use mini_browser::paint::DisplayCommand::*;
         match cmd {
-            SolidColor(rect, _) => { max_y = max_y.max(rect.y + rect.height); bg_count += 1; }
+            SolidColor(rect, _, _) => { max_y = max_y.max(rect.y + rect.height); bg_count += 1; }
             Text(_, rect, _) => { max_y = max_y.max(rect.y + rect.height); text_count += 1; }
-            Border(rect, _, _) => { max_y = max_y.max(rect.y + rect.height); border_count += 1; }
+            Border(rect, _, _, _) => { max_y = max_y.max(rect.y + rect.height); border_count += 1; }
             Image(_, rect, _) => { max_y = max_y.max(rect.y + rect.height); img_count += 1; }
         }
     }

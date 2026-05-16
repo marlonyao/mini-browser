@@ -216,7 +216,7 @@ impl BrowserApp {
 
                 for cmd in &page.display_list {
                     match cmd {
-                        DisplayCommand::SolidColor(cmd_rect, color) => {
+                        DisplayCommand::SolidColor(cmd_rect, color, _radius) => {
                             let egui_rect = egui::Rect::from_min_max(
                                 egui::pos2(origin.x + cmd_rect.x, origin.y + cmd_rect.y),
                                 egui::pos2(
@@ -229,7 +229,7 @@ impl BrowserApp {
                                 (color.g * 255.0) as u8,
                                 (color.b * 255.0) as u8,
                             );
-                            painter.rect_filled(egui_rect, 0.0, egui_color);
+                            painter.rect_filled(egui_rect, *_radius, egui_color);
                         }
                         DisplayCommand::Text(text, cmd_rect, color) => {
                             let pos = egui::pos2(
@@ -249,7 +249,7 @@ impl BrowserApp {
                                 egui_color,
                             );
                         }
-                        DisplayCommand::Border(cmd_rect, bw, color) => {
+                        DisplayCommand::Border(cmd_rect, bw, color, _radius) => {
                             let egui_rect = egui::Rect::from_min_max(
                                 egui::pos2(origin.x + cmd_rect.x, origin.y + cmd_rect.y),
                                 egui::pos2(
@@ -262,7 +262,7 @@ impl BrowserApp {
                                 (color.g * 255.0) as u8,
                                 (color.b * 255.0) as u8,
                             );
-                            painter.rect_stroke(egui_rect, 0.0, egui::Stroke::new(*bw, egui_color), egui::StrokeKind::Outside);
+                            painter.rect_stroke(egui_rect, *_radius, egui::Stroke::new(*bw, egui_color), egui::StrokeKind::Outside);
                         }
                         DisplayCommand::Image(_url, cmd_rect, alt) => {
                             // Placeholder: gray background + alt text + border
@@ -362,7 +362,7 @@ fn fetch_and_render(url: &str) -> FetchResult {
 
             // Calculate total content height
             let content_height = display_list.iter().map(|cmd| match cmd {
-                DisplayCommand::SolidColor(rect, _) | DisplayCommand::Text(_, rect, _) | DisplayCommand::Border(rect, _, _) | DisplayCommand::Image(_, rect, _) => {
+            DisplayCommand::SolidColor(rect, _, _) | DisplayCommand::Text(_, rect, _) | DisplayCommand::Border(rect, _, _, _) | DisplayCommand::Image(_, rect, _) => {
                     rect.y + rect.height
                 }
             }).fold(0.0f32, f32::max);
